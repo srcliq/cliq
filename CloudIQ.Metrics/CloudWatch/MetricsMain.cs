@@ -29,7 +29,7 @@ namespace CloudWatch
     class MetricsMain
     {
         static void Main(string[] args)
-        {
+        {            
             new CPUUtilization().GetCPUMetrics();            
         }
     }

@@ -33,6 +33,7 @@ namespace CloudWatch
                             Dimensions = new List<Dimension> { new Dimension { Name = "InstanceId", Value = instanceId } },
                             Unit = StandardUnit.Percent
                         });
+                        DBManager.SaveCPUUtilizationMetrics(cMetrics.Datapoints, instanceId);
                     }
                 }
             }
