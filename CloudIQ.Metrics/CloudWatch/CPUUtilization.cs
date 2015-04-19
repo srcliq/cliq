@@ -11,21 +11,46 @@ namespace CloudWatch
 {
     class CPUUtilization
     {
-        public void GetMetrics()
-        {            
-            var client = new Amazon.CloudWatch.AmazonCloudWatchClient();
-            var cMetrics = client.GetMetricStatistics(new GetMetricStatisticsRequest
+        public void GetCPUMetrics()
+        {
+            var clientCW = new Amazon.CloudWatch.AmazonCloudWatchClient();
+            var instanceIdList = GetInstanceIdList();
+            var availableMetrics = clientCW.ListMetrics();
+            foreach (var instanceId in instanceIdList)
             {
-                Namespace = "AWS/EC2",
-                MetricName = "CPUUtilization",
-                StartTime = DateTime.Now.AddDays(-10),
-                EndTime = DateTime.Now,
-                Period = 3000,
-                Statistics = new List<string> { "Average" },
-                Dimensions = new List<Dimension> { new Dimension { Name = "InstanceId", Value = "i-90e7459d" } },
-                Unit = StandardUnit.Count
-            });
-            var metrics = client.ListMetrics();
-        }        
+                foreach (var metric in availableMetrics.Metrics)
+                {
+                    if (metric.MetricName == "CPUUtilization" && metric.Namespace == "AWS/EC2" && metric.Dimensions[0].Value == instanceId)
+                    {
+                        var cMetrics = clientCW.GetMetricStatistics(new GetMetricStatisticsRequest
+                        {
+                            Namespace = "AWS/EC2",
+                            MetricName = "CPUUtilization",
+                            StartTime = DateTime.UtcNow.AddDays(-1),
+                            EndTime = DateTime.UtcNow,
+                            Period = 300,
+                            Statistics = new List<string> { "Average" },
+                            Dimensions = new List<Dimension> { new Dimension { Name = "InstanceId", Value = instanceId } },
+                            Unit = StandardUnit.Percent
+                        });
+                    }
+                }
+            }
+        }
+
+        public List<string> GetInstanceIdList()
+        {
+            var instanceIdList = new List<string>();
+            var clientEC2 = new Amazon.EC2.AmazonEC2Client();
+            var describeInstancesResponse = clientEC2.DescribeInstances();
+            foreach (var reservation in describeInstancesResponse.Reservations)
+            {
+                foreach (var instance in reservation.Instances)
+                {
+                    instanceIdList.Add(instance.InstanceId);
+                }
+            }
+            return instanceIdList;
+        }
     }
 }

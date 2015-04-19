@@ -71,7 +71,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="AmazonCloudWatchSample.cs" />
+    <Compile Include="MetricsMain.cs" />
     <Compile Include="CPUUtilization.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

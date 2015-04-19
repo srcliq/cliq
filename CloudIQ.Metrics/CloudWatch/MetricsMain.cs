@@ -17,7 +17,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-
 using System.Diagnostics;
 using System.Threading;
 
@@ -27,11 +26,11 @@ using Amazon.CloudWatch.Model;
 
 namespace CloudWatch
 {
-    class AmazonCloudWatchSample
+    class MetricsMain
     {
         static void Main(string[] args)
         {
-            new CPUUtilization().GetMetrics();            
+            new CPUUtilization().GetCPUMetrics();            
         }
     }
 }
