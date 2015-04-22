@@ -22,21 +22,28 @@ namespace CloudWatch
                 {
                     if (metric.MetricName == "CPUUtilization" && metric.Namespace == "AWS/EC2" && metric.Dimensions[0].Value == instanceId)
                     {
-                        var cMetrics = clientCW.GetMetricStatistics(new GetMetricStatisticsRequest
-                        {
-                            Namespace = "AWS/EC2",
-                            MetricName = "CPUUtilization",
-                            StartTime = DateTime.UtcNow.AddDays(-1),
-                            EndTime = DateTime.UtcNow,
-                            Period = 300,
-                            Statistics = new List<string> { "Average" },
-                            Dimensions = new List<Dimension> { new Dimension { Name = "InstanceId", Value = instanceId } },
-                            Unit = StandardUnit.Percent
-                        });
-                        DBManager.SaveCPUUtilizationMetrics(cMetrics.Datapoints, instanceId);
+                        var cpuPercentMetrics = GetCPUUtilizationMetrics(instanceId);
+                        DBManager.SaveCPUUtilizationMetrics(cpuPercentMetrics.Datapoints, instanceId);                        
                     }
                 }
             }
+        }
+
+        private static GetMetricStatisticsResponse GetCPUUtilizationMetrics(string instanceId)
+        {
+            var clientCW = new Amazon.CloudWatch.AmazonCloudWatchClient();
+            var cpuPercentMetrics = clientCW.GetMetricStatistics(new GetMetricStatisticsRequest
+            {
+                Namespace = "AWS/EC2",
+                MetricName = "CPUUtilization",
+                StartTime = DateTime.UtcNow.AddDays(-1),
+                EndTime = DateTime.UtcNow,
+                Period = 300,
+                Statistics = new List<string> { "Minimum", "Maximum", "Average" },
+                Dimensions = new List<Dimension> { new Dimension { Name = "InstanceId", Value = instanceId } },
+                Unit = StandardUnit.Percent
+            });
+            return cpuPercentMetrics;            
         }
 
         public List<string> GetInstanceIdList()
