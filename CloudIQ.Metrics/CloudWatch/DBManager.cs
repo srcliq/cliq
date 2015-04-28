@@ -8,27 +8,31 @@ using System.Text;
 using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
+using Amazon.EC2.Model;
 
 namespace CloudWatch
 {
     static class DBManager
     {
-        public static void SaveCPUUtilizationMetrics(List<Datapoint> cpuMetricDataPoints, string instanceId)
+        public static void SaveCWMetrics(Metric metric, GetMetricStatisticsResponse cwMetrics, Instance instance, List<string> statisticTypeList, StandardUnit standardMetricUnit)
         {
             DataSet ds = new DataSet();
             DataTable dt = new DataTable();
 
-            string server = "cloudiq-dw-dev.cne8vdl5tict.us-west-2.redshift.amazonaws.com";
-            string port = "5439";
-            string masterUsername = "cloudiq";
-            string masterUserPassword = "Cloudiq123";
-            string DBName = "cloudiqdwdev";
-            StringBuilder query = new StringBuilder("insert into factusagemetrics(instanceid, namekey, value, metricstimestamp, createddate) values ");
-            foreach(var dataPoint in cpuMetricDataPoints)
+            var server = "cloudiq-dw-dev.cne8vdl5tict.us-west-2.redshift.amazonaws.com";
+            var port = "5439";
+            var masterUsername = "cloudiq";
+            var masterUserPassword = "Cloudiq123";
+            var DBName = "cloudiqdwdev";
+            var query = new StringBuilder("insert into factusagemetrics(instanceid, namekey, value, metricstimestamp, createddate, instancetype, unit, statistic, namespace) values ");
+            var metricName = cwMetrics.Label;
+            var metricUnit = standardMetricUnit.Value;
+            foreach (var dataPoint in cwMetrics.Datapoints)
             {
-                query.Append(string.Format("('{0}','{1}','{2}','{3}','{4}'),", instanceId, "CPUUtilMinPercent", Convert.ToInt32(dataPoint.Minimum), dataPoint.Timestamp, DateTime.UtcNow));
-                query.Append(string.Format("('{0}','{1}','{2}','{3}','{4}'),", instanceId, "CPUUtilMaxPercent", Convert.ToInt32(dataPoint.Maximum), dataPoint.Timestamp, DateTime.UtcNow));
-                query.Append(string.Format("('{0}','{1}','{2}','{3}','{4}'),", instanceId, "CPUUtilAvgPercent", Convert.ToInt32(dataPoint.Average), dataPoint.Timestamp, DateTime.UtcNow));
+                foreach(var statisticType in statisticTypeList)
+                {
+                    query.Append(string.Format("('{0}','{1}','{2}','{3}','{4}','{5}','{6}','{7}','{8}'),", instance.InstanceId, metricName, Convert.ToInt32(Common.GetPropertyValue(dataPoint, statisticType)), dataPoint.Timestamp, DateTime.UtcNow, instance.InstanceType, metricUnit, statisticType, metric.Namespace));                
+                }                
             }
             try
             {

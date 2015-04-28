@@ -6,6 +6,8 @@ using System.Text;
 using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
+using Amazon.EC2.Model;
+using System.Configuration;
 
 namespace CloudWatch
 {
@@ -14,51 +16,59 @@ namespace CloudWatch
         public void GetCPUMetrics()
         {
             var clientCW = new Amazon.CloudWatch.AmazonCloudWatchClient();
-            var instanceIdList = GetInstanceIdList();
+            var instanceList = GetInstanceList();
             var availableMetrics = clientCW.ListMetrics();
-            foreach (var instanceId in instanceIdList)
+            var requiredMetrics = ConfigurationManager.AppSettings["EC2Metrics"];
+            var requiredMetricsList = requiredMetrics.Split(';').ToList();
+            var metricNamespaces = ConfigurationManager.AppSettings["MetricNamespaces"];
+            var metricNamespacesList = metricNamespaces.Split(';').ToList();
+            
+            foreach (var instance in instanceList)
             {
                 foreach (var metric in availableMetrics.Metrics)
                 {
-                    if (metric.MetricName == "CPUUtilization" && metric.Namespace == "AWS/EC2" && metric.Dimensions[0].Value == instanceId)
+                    if (requiredMetricsList.Contains(metric.MetricName) && metricNamespacesList.Contains(metric.Namespace) && metric.Dimensions[0].Value == instance.InstanceId)
                     {
-                        var cpuPercentMetrics = GetCPUUtilizationMetrics(instanceId);
-                        DBManager.SaveCPUUtilizationMetrics(cpuPercentMetrics.Datapoints, instanceId);                        
+                        var statisticTypes = ConfigurationManager.AppSettings[metric.MetricName + "StatisticTypes"];
+                        var statisticTypeList = statisticTypes.Split(';').ToList();
+                        int metricPeriod = Convert.ToInt32(ConfigurationManager.AppSettings["MetricPeriod"]);
+                        string metricUnit = ConfigurationManager.AppSettings[metric.MetricName + "MetricUnit"];
+                        var standardMetricUnit = StandardUnit.FindValue(metricUnit);
+                        var cwMetrics = GetCWMetrics(instance, metric.MetricName, metric.Namespace, statisticTypeList, metricPeriod, standardMetricUnit);
+                        DBManager.SaveCWMetrics(metric, cwMetrics, instance, statisticTypeList, standardMetricUnit);                        
                     }
                 }
             }
         }
 
-        private static GetMetricStatisticsResponse GetCPUUtilizationMetrics(string instanceId)
+        private static GetMetricStatisticsResponse GetCWMetrics(Instance instance, string metricName, string metricNamespace, List<string> statisticTypeList, int metricPeriod, string standardMetricUnit)
         {
             var clientCW = new Amazon.CloudWatch.AmazonCloudWatchClient();
-            var cpuPercentMetrics = clientCW.GetMetricStatistics(new GetMetricStatisticsRequest
+            
+            var cwMetrics = clientCW.GetMetricStatistics(new GetMetricStatisticsRequest
             {
-                Namespace = "AWS/EC2",
-                MetricName = "CPUUtilization",
+                Namespace = metricNamespace,
+                MetricName = metricName,
                 StartTime = DateTime.UtcNow.AddDays(-1),
                 EndTime = DateTime.UtcNow,
-                Period = 300,
-                Statistics = new List<string> { "Minimum", "Maximum", "Average" },
-                Dimensions = new List<Dimension> { new Dimension { Name = "InstanceId", Value = instanceId } },
-                Unit = StandardUnit.Percent
+                Period = metricPeriod,
+                Statistics = statisticTypeList,
+                Dimensions = new List<Dimension> { new Dimension { Name = "InstanceId", Value = instance.InstanceId } },
+                Unit = standardMetricUnit
             });
-            return cpuPercentMetrics;            
+            return cwMetrics;            
         }
 
-        public List<string> GetInstanceIdList()
+        public List<Instance> GetInstanceList()
         {
-            var instanceIdList = new List<string>();
+            var instanceList = new List<Instance>();
             var clientEC2 = new Amazon.EC2.AmazonEC2Client();
             var describeInstancesResponse = clientEC2.DescribeInstances();
             foreach (var reservation in describeInstancesResponse.Reservations)
             {
-                foreach (var instance in reservation.Instances)
-                {
-                    instanceIdList.Add(instance.InstanceId);
-                }
+                instanceList.AddRange(reservation.Instances);                
             }
-            return instanceIdList;
+            return instanceList;
         }
     }
 }
