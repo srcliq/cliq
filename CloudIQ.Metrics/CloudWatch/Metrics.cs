@@ -26,8 +26,10 @@ namespace CloudWatch
                 int metricPeriod = Convert.ToInt32(ConfigurationManager.AppSettings["MetricPeriod"]);                        
                 var cwMetrics = GetCWMetrics(metric, statisticTypeList, metricPeriod);
                 Instance instance = (metric.Dimensions.Count > 0) ? GetInstance(instanceList, metric.Dimensions[0].Value) : null;
-                DBManager.SaveCWMetrics(metric, cwMetrics, instance, statisticTypeList);                                          
-            }            
+                DBManager.SaveCWMetrics(metric, cwMetrics, instance, statisticTypeList);
+                FileManager.SaveCWMetrics(metric, cwMetrics, instance, statisticTypeList);                      
+            }
+            S3Manager.UploadMetricFile();  
         }
 
         private static GetMetricStatisticsResponse GetCWMetrics(Metric metric, List<string> statisticTypeList, int metricPeriod)

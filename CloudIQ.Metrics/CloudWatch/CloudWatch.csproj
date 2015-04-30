@@ -73,9 +73,11 @@
   <ItemGroup>
     <Compile Include="Common.cs" />
     <Compile Include="DBManager.cs" />
+    <Compile Include="FileManager.cs" />
     <Compile Include="MetricsMain.cs" />
     <Compile Include="Metrics.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="S3Manager.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />
