@@ -74,7 +74,7 @@
     <Compile Include="Common.cs" />
     <Compile Include="DBManager.cs" />
     <Compile Include="MetricsMain.cs" />
-    <Compile Include="CPUUtilization.cs" />
+    <Compile Include="Metrics.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
