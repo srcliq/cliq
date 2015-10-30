@@ -116,6 +116,9 @@
       <HintPath>..\packages\Elasticsearch.Net.1.7.1\lib\net45\Elasticsearch.Net.dll</HintPath>
       <Private>True</Private>
     </Reference>
+    <Reference Include="log4net">
+      <HintPath>..\packages\log4net.2.0.3\lib\net40-full\log4net.dll</HintPath>
+    </Reference>
     <Reference Include="Nest, Version=1.0.0.0, Culture=neutral, PublicKeyToken=96c599bbe3e70f5d, processorArchitecture=MSIL">
       <HintPath>..\packages\NEST.1.7.1\lib\net45\Nest.dll</HintPath>
       <Private>True</Private>
@@ -138,11 +141,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Data\Asg.cs" />
-    <Compile Include="Data\Elb.cs" />
     <Compile Include="Data\FlowLog.cs" />
     <Compile Include="Data\Instance.cs" />
-    <Compile Include="Data\SecurityGroup.cs" />
     <Compile Include="Data\Subnet.cs" />
     <Compile Include="Data\Vpc.cs" />
     <Compile Include="FlowLogManager.cs">
@@ -150,7 +150,6 @@
     </Compile>
     <Compile Include="Reader.cs" />
     <Compile Include="assemblyinfo.cs" />
-    <Compile Include="TopologyHierarchy.cs" />
   </ItemGroup>
   <ItemGroup>
     <BootstrapperPackage Include="Microsoft.Net.Client.3.5">
