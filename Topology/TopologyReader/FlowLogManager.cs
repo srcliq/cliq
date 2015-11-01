@@ -88,7 +88,7 @@ namespace TopologyReader
                 {                    
                     Log.Debug(aggregation);
                     var aggregationJson = JsonConvert.SerializeObject(aggregation);
-                    db.StringSet(aggregation.AggregationIdentifier, aggregationJson);
+                    Reader.AddToRedisWithExpiry(aggregation.AggregationIdentifier, aggregationJson, db);
                 }                
             }
         }

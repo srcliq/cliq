@@ -38,35 +38,46 @@ namespace TopologyReader
     internal class Reader
     {
         private static readonly ILog Log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+        private static int redisTTL = 5;
+            
         public static void Main(string[] args)
         {
-            int writeTopology = 0;
-            int readFlowLogs = 0;
-            int flowLogDurationType = 0;
+            try
+            {
+                int writeTopology = 0;
+                int readFlowLogs = 0;
+                int flowLogDurationType = 0;
+                int.TryParse(ConfigurationManager.AppSettings["RedisKeysTTLDays"], out redisTTL);
 
-            GetInputs(args, ref writeTopology, ref readFlowLogs, ref flowLogDurationType);
+                GetInputs(args, ref writeTopology, ref readFlowLogs, ref flowLogDurationType);
 
-            AutoMapper.Mapper.CreateMap<Amazon.EC2.Model.Subnet, TopologyReader.Data.Subnet>();
-            AutoMapper.Mapper.CreateMap<Amazon.EC2.Model.Instance, TopologyReader.Data.Instance>();
-                        
-            var accountNumber = GetAccountNumber();            
-            if (string.IsNullOrEmpty(accountNumber))
-            {                
-                Log.Error("Unable to read the account number");
-                return;
-            }
-            ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(ConfigurationManager.AppSettings["RedisEndPoint"]);
-            IDatabase db = redis.GetDatabase();
-            foreach(var endPoint in RegionEndpoint.EnumerableAllRegions){
-                if(writeTopology == 1)
+                AutoMapper.Mapper.CreateMap<Amazon.EC2.Model.Subnet, TopologyReader.Data.Subnet>();
+                AutoMapper.Mapper.CreateMap<Amazon.EC2.Model.Instance, TopologyReader.Data.Instance>();
+
+                var accountNumber = GetAccountNumber();
+                if (string.IsNullOrEmpty(accountNumber))
                 {
-                    WriteTopology(accountNumber, endPoint, db);
+                    Log.Error("Unable to read the account number");
+                    return;
                 }
-                if(readFlowLogs == 1)
+                ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(ConfigurationManager.AppSettings["RedisEndPoint"]);
+                IDatabase db = redis.GetDatabase();
+                foreach (var endPoint in RegionEndpoint.EnumerableAllRegions)
                 {
-                    ReadFlowLogs(accountNumber, endPoint, flowLogDurationType, db);
-                }                
-            }                        
+                    if (writeTopology == 1)
+                    {
+                        WriteTopology(accountNumber, endPoint, db);
+                    }
+                    if (readFlowLogs == 1)
+                    {
+                        ReadFlowLogs(accountNumber, endPoint, flowLogDurationType, db);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Catch all exception", ex);
+            }                                    
         }
 
         private static void GetInputs(string[] args, ref int writeTopology, ref int readFlowLogs, ref int flowLogDurationType)
@@ -191,16 +202,16 @@ namespace TopologyReader
             Log.InfoFormat("End writing data to redis ({0})", regionEndPoint.SystemName);
         }
 
-        private static void AddToRedisWithExpiry(string key, string value, IDatabase db)
+        internal static void AddToRedisWithExpiry(string key, string value, IDatabase db)
         {
             db.StringSet(key, value);
-            db.KeyExpire(key, new TimeSpan(5, 0, 0, 0));
+            db.KeyExpire(key, new TimeSpan(redisTTL, 0, 0, 0));
         }
         
-        private static void AddSetToRedisWithExpiry(string key, string value, IDatabase db)
+        internal static void AddSetToRedisWithExpiry(string key, string value, IDatabase db)
         {
             db.SetAdd(key, value);
-            db.KeyExpire(key, new TimeSpan(5, 0, 0, 0));
+            db.KeyExpire(key, new TimeSpan(redisTTL, 0, 0, 0));
         }
 
         private static void WriteSecurityGroups(IAmazonEC2 ec2, string dataKey, IDatabase db)
@@ -219,11 +230,9 @@ namespace TopologyReader
             var elbc = new AmazonElasticLoadBalancingClient(regionEndPoint);
             var elbResponse = elbc.DescribeLoadBalancers();
             foreach (var elb in elbResponse.LoadBalancerDescriptions)
-            {
-                //db.SetAdd(string.Format("{0}-lbs", dataKey), string.Format("lbg-{0}", elb.LoadBalancerName));
+            {                
                 AddSetToRedisWithExpiry(string.Format("{0}-lbs", dataKey), string.Format("lbg-{0}", elb.LoadBalancerName), db);
                 var elbJson = JsonConvert.SerializeObject(elb);
-                //db.StringSet(string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName), elbJson);
                 AddToRedisWithExpiry(string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName), elbJson, db);
                 //code to add elb name to the instance details
                 foreach (var instance in elb.Instances)
@@ -237,7 +246,7 @@ namespace TopologyReader
                         dataInstance.ElbKeyName = string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName);
                         //add the instance data with asg name back to redis
                         instanceJson = JsonConvert.SerializeObject(dataInstance);
-                        db.StringSet(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson);
+                        AddToRedisWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
                     }
                 }
             }
@@ -250,9 +259,9 @@ namespace TopologyReader
             DescribeAutoScalingInstancesResponse asgInstanceResponse = asc.DescribeAutoScalingInstances();
             foreach (var asGroup in asgResponse.AutoScalingGroups)
             {
-                db.SetAdd(string.Format("{0}-asgs", dataKey), string.Format("asg-{0}", asGroup.AutoScalingGroupName));
+                AddSetToRedisWithExpiry(string.Format("{0}-asgs", dataKey), string.Format("asg-{0}", asGroup.AutoScalingGroupName), db);
                 var asgJson = JsonConvert.SerializeObject(asGroup);
-                db.StringSet(string.Format("{0}-asg-{1}", dataKey, asGroup.AutoScalingGroupName), asgJson);
+                AddToRedisWithExpiry(string.Format("{0}-asg-{1}", dataKey, asGroup.AutoScalingGroupName), asgJson, db);
                 //code to add asg name to the instance details
                 foreach (var instance in asGroup.Instances)
                 {
@@ -265,7 +274,7 @@ namespace TopologyReader
                         dataInstance.AsgKeyName = string.Format("{0}-asg-{1}", dataKey, asGroup.AutoScalingGroupName);
                         //add the instance data with asg name back to redis
                         instanceJson = JsonConvert.SerializeObject(dataInstance);
-                        db.StringSet(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson);
+                        AddToRedisWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
                     }
                 }
             }
@@ -282,9 +291,9 @@ namespace TopologyReader
                     var instance = AutoMapper.Mapper.Map<Data.Instance>(rInstance);
                     instance.Size = new Random().Next(1, 32);
                     string instanceJson = JsonConvert.SerializeObject(instance);
-                    db.StringSet(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson);
-                    db.SetAdd(string.Format("{0}-vpcinstances-{1}", dataKey, instance.VpcId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId));
-                    db.SetAdd(string.Format("{0}-subnetinstances-{1}", dataKey, instance.SubnetId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId));
+                    AddToRedisWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
+                    AddSetToRedisWithExpiry(string.Format("{0}-vpcinstances-{1}", dataKey, instance.VpcId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
+                    AddSetToRedisWithExpiry(string.Format("{0}-subnetinstances-{1}", dataKey, instance.SubnetId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
                     dKey = string.Format("{0}-{1}", dataKey, instance.SubnetId);
                 }
             }
@@ -302,7 +311,7 @@ namespace TopologyReader
                     foreach (var ecs in ecsResponse.ContainerInstances)
                     {
                         string ecsJson = JsonConvert.SerializeObject(ecs);
-                        db.StringSet(string.Format("{0}-ecs-{1}", dataKey, ecs.Ec2InstanceId), ecsJson);
+                        AddToRedisWithExpiry(string.Format("{0}-ecs-{1}", dataKey, ecs.Ec2InstanceId), ecsJson, db);
                     }
                 }
             }
@@ -320,7 +329,7 @@ namespace TopologyReader
             foreach (var dbInstance in rdsInstanceResponse.DBInstances)
             {
                 string dbJson = JsonConvert.SerializeObject(dbInstance);
-                db.StringSet(string.Format("{0}-rds-{1}", dataKey, dbInstance.DBInstanceIdentifier), dbJson);
+                AddToRedisWithExpiry(string.Format("{0}-rds-{1}", dataKey, dbInstance.DBInstanceIdentifier), dbJson, db);
             }
         }
 
@@ -337,7 +346,7 @@ namespace TopologyReader
             foreach (var snapshot in ssResponse.Snapshots)
             {
                 string snapshotJson = JsonConvert.SerializeObject(snapshot);
-                db.StringSet(string.Format("{0}-ss-{1}", dataKey, snapshot.SnapshotId), snapshotJson);
+                AddToRedisWithExpiry(string.Format("{0}-ss-{1}", dataKey, snapshot.SnapshotId), snapshotJson, db);
             }
         }
 
@@ -347,7 +356,7 @@ namespace TopologyReader
             foreach (var volume in ebsResponse.Volumes)
             {
                 string volumeJson = JsonConvert.SerializeObject(volume);
-                db.StringSet(string.Format("{0}-ebs-{1}", dataKey, volume.VolumeId), volumeJson);
+                AddToRedisWithExpiry(string.Format("{0}-ebs-{1}", dataKey, volume.VolumeId), volumeJson, db);
             }
         }
 
@@ -357,11 +366,11 @@ namespace TopologyReader
             foreach (var ni in eniResponse.NetworkInterfaces)
             {
                 string niJson = JsonConvert.SerializeObject(ni);
-                db.StringSet(string.Format("{0}-eni-{1}", dataKey, ni.NetworkInterfaceId), niJson);
-                db.StringSet(string.Format("{0}-eni-{1}-{2}", dataKey, ni.VpcId, ni.PrivateIpAddress), niJson);
+                AddToRedisWithExpiry(string.Format("{0}-eni-{1}", dataKey, ni.NetworkInterfaceId), niJson, db);
+                AddToRedisWithExpiry(string.Format("{0}-eni-{1}-{2}", dataKey, ni.VpcId, ni.PrivateIpAddress), niJson, db);
                 if (ni.Association != null && !string.IsNullOrEmpty(ni.Association.PublicIp))
                 {
-                    db.StringSet(string.Format("{0}-eni-{1}-{2}", dataKey, ni.VpcId, ni.Association.PublicIp), niJson);
+                    AddToRedisWithExpiry(string.Format("{0}-eni-{1}-{2}", dataKey, ni.VpcId, ni.Association.PublicIp), niJson, db);
                 }
             }
         }
@@ -372,7 +381,7 @@ namespace TopologyReader
             foreach (var vg in vgResponse.VpnGateways)
             {
                 string vgJson = JsonConvert.SerializeObject(vg);
-                db.StringSet(string.Format("{0}-vg-{1}", dataKey, vg.VpnGatewayId), vgJson);
+                AddToRedisWithExpiry(string.Format("{0}-vg-{1}", dataKey, vg.VpnGatewayId), vgJson, db);
             }
             return vgResponse;
         }
@@ -383,7 +392,7 @@ namespace TopologyReader
             foreach (var ig in igResponse.InternetGateways)
             {
                 string igJson = JsonConvert.SerializeObject(ig);
-                db.StringSet(string.Format("{0}-ig-{1}", dataKey, ig.InternetGatewayId), igJson);
+                AddToRedisWithExpiry(string.Format("{0}-ig-{1}", dataKey, ig.InternetGatewayId), igJson, db);
             }
             return igResponse;
         }
@@ -394,7 +403,7 @@ namespace TopologyReader
             foreach (var rt in rtResponse.RouteTables)
             {
                 string rtJson = JsonConvert.SerializeObject(rt);
-                db.StringSet(string.Format("{0}-rt-{1}", dataKey, rt.RouteTableId), rtJson);
+                AddToRedisWithExpiry(string.Format("{0}-rt-{1}", dataKey, rt.RouteTableId), rtJson, db);
             }
         }
 
@@ -409,8 +418,8 @@ namespace TopologyReader
                 else
                     topologySubnet.Name = subnet.SubnetId;
                 string subnetJson = JsonConvert.SerializeObject(topologySubnet);
-                db.StringSet(string.Format("{0}-subnet-{1}", dataKey, subnet.SubnetId), subnetJson);
-                db.SetAdd(string.Format("{0}-vpcsubnets-{1}", dataKey, subnet.VpcId), string.Format("{0}-subnet-{1}", dataKey, subnet.SubnetId));
+                AddToRedisWithExpiry(string.Format("{0}-subnet-{1}", dataKey, subnet.SubnetId), subnetJson, db);
+                AddSetToRedisWithExpiry(string.Format("{0}-vpcsubnets-{1}", dataKey, subnet.VpcId), string.Format("{0}-subnet-{1}", dataKey, subnet.SubnetId), db);
             }
             return subnetResponse;
         }
@@ -424,7 +433,7 @@ namespace TopologyReader
                 foreach (var vpcEndPoint in vpcEndPointsResponse.VpcEndpoints)
                 {
                     string vpcEndPointJson = JsonConvert.SerializeObject(vpcEndPoint);
-                    db.StringSet(string.Format("{0}-vpcep-{1}", dataKey, vpcEndPoint.VpcEndpointId), vpcEndPointJson);
+                    AddToRedisWithExpiry(string.Format("{0}-vpcep-{1}", dataKey, vpcEndPoint.VpcEndpointId), vpcEndPointJson, db);
                 }
             }
             catch (Exception ex)
@@ -440,7 +449,7 @@ namespace TopologyReader
             foreach (var vpcPeer in vpcPeeringResponses.VpcPeeringConnections)
             {
                 string vpcPeerJson = JsonConvert.SerializeObject(vpcPeer);
-                db.StringSet(string.Format("{0}-vpcpc-{1}", dataKey, vpcPeer.VpcPeeringConnectionId), vpcPeerJson);
+                AddToRedisWithExpiry(string.Format("{0}-vpcpc-{1}", dataKey, vpcPeer.VpcPeeringConnectionId), vpcPeerJson, db);
             }
         }
 
@@ -465,7 +474,7 @@ namespace TopologyReader
                 topologyVPC.CidrBlock = vpc.CidrBlock;
                 string vpcJson = JsonConvert.SerializeObject(topologyVPC);
                 //var vpcJson = JsonConvert.SerializeObject(vpc);
-                db.StringSet(string.Format("{0}-vpc-{1}", dataKey, vpc.VpcId), vpcJson);
+                AddToRedisWithExpiry(string.Format("{0}-vpc-{1}", dataKey, vpc.VpcId), vpcJson, db);
             }
         }
     }
