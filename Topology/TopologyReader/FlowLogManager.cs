@@ -1,4 +1,5 @@
 ﻿using Amazon.EC2.Model;
+using log4net;
 using Nest;
 using Newtonsoft.Json;
 using StackExchange.Redis;
@@ -10,28 +11,36 @@ using System.Text;
 using System.Threading.Tasks;
 
 namespace TopologyReader
-{
+{    
     public static class FlowLogManager
     {
+        private static readonly ILog Log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static string sumOfPacketsAggKey = "sumOfPackets";
         private static string sumOfBytesAggKey = "sumOfBytes";
 
-        public static void ReadES(IDatabase db, string dataKey, List<Subnet> subnets, List<VpnGateway> vpnGateways, List<InternetGateway> internetGateways)
+        public static void ReadES(IDatabase db, string dataKey, int durationType, List<Subnet> subnets, List<VpnGateway> vpnGateways, List<InternetGateway> internetGateways)
         {
             List<AggregationParameter> parameters = new List<AggregationParameter>();
+
+            //AggregationParameter parameterTest = new AggregationParameter();
+            //parameterTest.AggregationIdentifier = string.Format("{0}-traffic-s2s-{1}-{2}", dataKey, "dummy", "dummy");
+            //parameterTest.SourceAggExpression = new Expression { Field = "src_subnetid", Values = new List<string> { "dummy" } };
+            //parameterTest.DestAggExpression = new Expression { Field = "src_subnetid", Values = new List<string> { "dummy" } };
+            //parameters.Add(parameterTest);
+
             foreach (var subnet in subnets)
             {
                 foreach (var otherSubnet in subnets)
                 {
-                    if(subnet.SubnetId != otherSubnet.SubnetId)
+                    if (subnet.SubnetId != otherSubnet.SubnetId)
                     {
                         AggregationParameter parameter = new AggregationParameter();
                         parameter.AggregationIdentifier = string.Format("{0}-traffic-s2s-{1}-{2}", dataKey, subnet.SubnetId, otherSubnet.SubnetId);
                         parameter.SourceAggExpression = new Expression { Field = "src_subnetid", Values = new List<string> { subnet.SubnetId.Replace("-", "") } };
-                        parameter.DestAggExpression = new Expression { Field = "dst_subnetid", Values = new List<string> { otherSubnet.SubnetId.Replace("-", "") } };
+                        parameter.DestAggExpression = new Expression { Field = "dest_subnetid", Values = new List<string> { otherSubnet.SubnetId.Replace("-", "") } };
                         parameters.Add(parameter);
                     }
-                }                
+                }
             }
 
             foreach (var subnet in subnets)
@@ -40,14 +49,14 @@ namespace TopologyReader
                 {
                     AggregationParameter parameterST = new AggregationParameter();
                     parameterST.AggregationIdentifier = string.Format("{0}-traffic-s2v-{1}-{2}", dataKey, subnet.SubnetId, vpnGateway.VpnGatewayId);
-                    parameterST.SourceAggExpression = new Expression { Field = "src_subnetid", Values = new List<string> { subnet.SubnetId.Replace("-", "") }};
+                    parameterST.SourceAggExpression = new Expression { Field = "src_subnetid", Values = new List<string> { subnet.SubnetId.Replace("-", "") } };
                     parameterST.DestAggExpression = new Expression { Field = "gatewayid", Values = new List<string> { vpnGateway.VpnGatewayId.Replace("-", "") } };
                     parameters.Add(parameterST);
 
                     AggregationParameter parameterVG = new AggregationParameter();
                     parameterVG.AggregationIdentifier = string.Format("{0}-traffic-v2s-{1}-{2}", dataKey, vpnGateway.VpnGatewayId, subnet.SubnetId);
                     parameterVG.SourceAggExpression = new Expression { Field = "gatewayid", Values = new List<string> { vpnGateway.VpnGatewayId.Replace("-", "") } };
-                    parameterVG.DestAggExpression = new Expression { Field = "dst_subnetid", Values = new List<string> { subnet.SubnetId.Replace("-", "") } };
+                    parameterVG.DestAggExpression = new Expression { Field = "dest_subnetid", Values = new List<string> { subnet.SubnetId.Replace("-", "") } };
                     parameters.Add(parameterVG);
                 }
 
@@ -62,28 +71,34 @@ namespace TopologyReader
                     AggregationParameter parameterIG = new AggregationParameter();
                     parameterIG.AggregationIdentifier = string.Format("{0}-traffic-i2s-{1}-{2}", dataKey, igGateway.InternetGatewayId, subnet.SubnetId);
                     parameterIG.SourceAggExpression = new Expression { Field = "gatewayid", Values = new List<string> { igGateway.InternetGatewayId.Replace("-", "") } };
-                    parameterIG.DestAggExpression = new Expression { Field = "dst_subnetid", Values = new List<string> { subnet.SubnetId.Replace("-", "") } };
+                    parameterIG.DestAggExpression = new Expression { Field = "dest_subnetid", Values = new List<string> { subnet.SubnetId.Replace("-", "") } };
                     parameters.Add(parameterIG);
                 }
             }
-            var flowLogAggregations = ReadES(parameters);
+
+            var flowLogAggregations = new List<FlowLogAggregation>();
+            if (durationType == 0)
+            {
+                flowLogAggregations = ReadES(parameters, 15);
+            }
+            
             foreach (var aggregation in flowLogAggregations)
             {                
                 if(aggregation.SumOfBytes > 0)
-                {
-                    Console.WriteLine(aggregation);
+                {                    
+                    Log.Debug(aggregation);
                     var aggregationJson = JsonConvert.SerializeObject(aggregation);
                     db.StringSet(aggregation.AggregationIdentifier, aggregationJson);
                 }                
             }
         }
 
-        public static List<FlowLogAggregation> ReadES(List<AggregationParameter> parameters)
+        public static List<FlowLogAggregation> ReadES(List<AggregationParameter> parameters, int logDurationInMin)
         {
             //string index = "cwl-2015.10.25";
-            string index = ConfigurationManager.AppSettings["ESIndexPrefix"] + DateTime.Now.ToString("yyyy.MM.dd"); //2015.09.18
+            string index = ConfigurationManager.AppSettings["ESIndexPrefix"] + DateTime.UtcNow.ToString("yyyy.MM.dd"); //2015.09.18
             //string type = "CloudTrail/Flowlogs";
-            string type = ConfigurationManager.AppSettings["ESIndexPrefix"];
+            string type = ConfigurationManager.AppSettings["ESIndexType"];
 
             //var parameters = GetAggregationParameters();
             //var node = new Uri("http://54.186.112.5:9200");
@@ -91,13 +106,15 @@ namespace TopologyReader
 
             var settings = new ConnectionSettings(node);
             //settings.SetBasicAuthentication("admin", "admin");
-            var currentUnixTimestamp = (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
-
+            var currentUnixTimestamp = (Int32)(DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1))).TotalSeconds; ;
+            var aggStart = currentUnixTimestamp - (logDurationInMin*60);
+            var aggEnd = currentUnixTimestamp;
             var esClient = new ElasticClient(settings);
 
             var result = esClient.Search<FlowLog>(s => s.Index(index).Type(type)
-                .Query(q => q.Filtered(filtered => filtered.Filter(filter => filter.And(expr1 => expr1.Range(r => r.GreaterOrEquals(currentUnixTimestamp).OnField(f => f.start)),
-                                                                                              expr2 => expr2.Range(r => r.LowerOrEquals(currentUnixTimestamp).OnField(f => f.end))))))
+                //end of flowlog capture window should fall between the timeframe we are aggregating on
+                .Query(q => q.Filtered(filtered => filtered.Filter(filter => filter.And(expr1 => expr1.Range(r => r.GreaterOrEquals(aggStart).OnField(f => f.end)),
+                                                                                              expr2 => expr2.Range(r => r.LowerOrEquals(aggEnd).OnField(f => f.end))))))
                 .Aggregations(a => GetAggregationDescriptor(a, parameters)));
 
             if (result != null && result.Aggregations != null && result.Aggregations.Any())
@@ -107,26 +124,6 @@ namespace TopologyReader
             }
             return null;
         }
-
-        #region GetAggregationParameters
-        private static List<AggregationParameter> GetAggregationParameters()
-        {
-            List<AggregationParameter> parameters = new List<AggregationParameter>();
-            AggregationParameter parameter = new AggregationParameter();
-            parameter.AggregationIdentifier = "dummy123";
-            parameter.SourceAggExpression = new Expression() { Field = "src_subnetid", Values = new List<string> { "90d818e7" } };
-            parameter.DestAggExpression = new Expression { Field = "dstaddr", Values = new List<string> { "172.31.18.125" } };
-            parameters.Add(parameter);
-
-            AggregationParameter parameter2 = new AggregationParameter();
-            parameter2.AggregationIdentifier = "dummy123x";
-            parameter2.SourceAggExpression = new Expression() { Field = "src_subnetid", Values = new List<string> { "90d818e7" } };
-            parameter2.DestAggExpression = new Expression { Field = "dstaddr", Values = new List<string> { "172.31.18.125" } };
-            parameters.Add(parameter2);
-
-            return parameters;
-        }
-        #endregion
 
         #region GetAggregationDescriptor
         private static AggregationDescriptor<FlowLog> GetAggregationDescriptor(AggregationDescriptor<FlowLog> descriptor, List<AggregationParameter> parameters)

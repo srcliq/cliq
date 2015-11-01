@@ -40,18 +40,63 @@ namespace TopologyReader
         private static readonly ILog Log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         public static void Main(string[] args)
         {
+            int writeTopology = 0;
+            int readFlowLogs = 0;
+            int flowLogDurationType = 0;
+
+            GetInputs(args, ref writeTopology, ref readFlowLogs, ref flowLogDurationType);
+
             AutoMapper.Mapper.CreateMap<Amazon.EC2.Model.Subnet, TopologyReader.Data.Subnet>();
             AutoMapper.Mapper.CreateMap<Amazon.EC2.Model.Instance, TopologyReader.Data.Instance>();
                         
-            var accountNumber = GetAccountNumber();
+            var accountNumber = GetAccountNumber();            
             if (string.IsNullOrEmpty(accountNumber))
             {                
                 Log.Error("Unable to read the account number");
                 return;
             }
+            ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(ConfigurationManager.AppSettings["RedisEndPoint"]);
+            IDatabase db = redis.GetDatabase();
             foreach(var endPoint in RegionEndpoint.EnumerableAllRegions){
-                WriteTopology(accountNumber, endPoint); 
+                if(writeTopology == 1)
+                {
+                    WriteTopology(accountNumber, endPoint, db);
+                }
+                if(readFlowLogs == 1)
+                {
+                    ReadFlowLogs(accountNumber, endPoint, flowLogDurationType, db);
+                }                
             }                        
+        }
+
+        private static void GetInputs(string[] args, ref int writeTopology, ref int readFlowLogs, ref int flowLogDurationType)
+        {
+            switch (args.Length)
+            {
+                case 0:
+                    writeTopology = 1;
+                    break;
+                case 1:
+                    if (!int.TryParse(args[0], out writeTopology))
+                    {
+                        Log.Error("Invalid arguments");
+                    }
+                    break;
+                case 2:
+                    if (!int.TryParse(args[0], out writeTopology) || !int.TryParse(args[1], out readFlowLogs))
+                    {
+                        Log.Error("Invalid arguments");
+                    }
+                    break;
+                case 3:
+                    if (!int.TryParse(args[0], out writeTopology) || !int.TryParse(args[1], out readFlowLogs) || !int.TryParse(args[2], out flowLogDurationType))
+                    {
+                        Log.Error("Invalid arguments");
+                    }
+                    break;
+                default:
+                    break;
+            }
         }
 
         public static string GetAccountNumber()
@@ -67,7 +112,47 @@ namespace TopologyReader
             return string.Empty; //"arn:aws:iam::990008671661:user/xyz"
         }
 
-        public static void WriteTopology(string accountNumber, RegionEndpoint regionEndPoint)
+        private static string GetDataKey(string accountNumber, RegionEndpoint regionEndPoint)
+        {
+            var dateString = DateTime.Now.ToString("MMddyyyHHmmss");
+            var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionEndPoint.SystemName);
+            return dataKey;
+        }
+
+        public static void ReadFlowLogs(string accountNumber, RegionEndpoint regionEndPoint, int durationType, IDatabase db)
+        {
+            Log.InfoFormat("Start reading flowlogs and writing traffic data to redis ({0})", regionEndPoint.SystemName);
+            IAmazonEC2 ec2 = new Amazon.EC2.AmazonEC2Client(regionEndPoint);
+            try
+            {
+                ec2.DescribeSubnets();
+            }
+            catch (Exception ex)
+            {
+                Log.InfoFormat("Unable to read subnets: {0}", ex.Message);
+                return;
+            }
+
+            var dataKey = GetDataKey(accountNumber, regionEndPoint);
+            db.SetAdd("TST", dataKey);
+            db.StringSet(string.Format("LATESTTST-{0}-{1}", accountNumber, regionEndPoint.SystemName), dataKey);
+
+            var subnetResponse = ec2.DescribeSubnets();
+            var vgResponse = ec2.DescribeVpnGateways();
+            var igResponse = ec2.DescribeInternetGateways();
+                        
+            try
+            {
+                FlowLogManager.ReadES(db, dataKey, durationType, subnetResponse.Subnets, vgResponse.VpnGateways, igResponse.InternetGateways);
+                Log.InfoFormat("End reading flowlogs and writing traffic data to redis ({0})", regionEndPoint.SystemName);
+            }
+            catch (Exception ex)
+            {
+                Log.ErrorFormat("Error reading flowlogs and writing traffic data to redis ({0}): {1}", regionEndPoint.SystemName, ex.Message);
+            }
+        }
+
+        public static void WriteTopology(string accountNumber, RegionEndpoint regionEndPoint, IDatabase db)
         {            
             Log.InfoFormat("Start writing data to redis ({0})", regionEndPoint.SystemName);
             
@@ -78,24 +163,13 @@ namespace TopologyReader
             }
             catch (Exception ex)
             {                
-                Log.Error("Unable to read Vpcs", ex);
+                Log.InfoFormat("Unable to read Vpcs: {0}", ex.Message);
                 return;
             }
 
-            var dateString = DateTime.Now.ToString("MMddyyyHHmmss");
-            var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionEndPoint.SystemName);
-
-            ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(ConfigurationManager.AppSettings["RedisEndPoint"]);
-            IDatabase db = redis.GetDatabase();
-
-            //IAmazonEC2 ec2x = new Amazon.EC2.AmazonEC2Client(RegionEndpoint.USWest2);
-            //var subnetResponsex = ec2x.DescribeSubnets();
-            //var vgResponsex = ec2x.DescribeVpnGateways();
-            //var igResponsex = ec2x.DescribeInternetGateways();
-            //FlowLogManager.ReadES(db, dataKey, subnetResponsex.Subnets, vgResponsex.VpnGateways, igResponsex.InternetGateways);
-            //return;
-
-            db.SetAdd("TS", dataKey);
+            var dataKey = GetDataKey(accountNumber, regionEndPoint);            
+            db.SetAdd("TS", dataKey);            
+            db.StringSet(string.Format("LATESTTS-{0}-{1}", accountNumber, regionEndPoint.SystemName), dataKey);
 
             WriteVpcs(ec2, dataKey, db);
             WriteVpcPeeringConnections(ec2, dataKey, db);
@@ -113,24 +187,20 @@ namespace TopologyReader
             WriteAsgs(regionEndPoint, dataKey, db);
             WriteElbs(regionEndPoint, dataKey, db);
             WriteSecurityGroups(ec2, dataKey, db);
-
-            AggregateFlowlogs(regionEndPoint, dataKey, db, subnetResponse, igResponse, vgResponse);
                         
             Log.InfoFormat("End writing data to redis ({0})", regionEndPoint.SystemName);
         }
 
-        private static void AggregateFlowlogs(RegionEndpoint regionEndPoint, string dataKey, IDatabase db, DescribeSubnetsResponse subnetResponse, DescribeInternetGatewaysResponse igResponse, DescribeVpnGatewaysResponse vgResponse)
-        {            
-            Log.InfoFormat("Start reading flowlogs and writing traffic data to redis ({0})", regionEndPoint.SystemName);
-            try
-            {
-                FlowLogManager.ReadES(db, dataKey, subnetResponse.Subnets, vgResponse.VpnGateways, igResponse.InternetGateways);                
-                Log.InfoFormat("End reading flowlogs and writing traffic data to redis ({0})", regionEndPoint.SystemName);
-            }
-            catch (Exception ex)
-            {                
-                Log.ErrorFormat("Error reading flowlogs and writing traffic data to redis ({0}): {1}", regionEndPoint.SystemName, ex.Message);
-            }
+        private static void AddToRedisWithExpiry(string key, string value, IDatabase db)
+        {
+            db.StringSet(key, value);
+            db.KeyExpire(key, new TimeSpan(5, 0, 0, 0));
+        }
+        
+        private static void AddSetToRedisWithExpiry(string key, string value, IDatabase db)
+        {
+            db.SetAdd(key, value);
+            db.KeyExpire(key, new TimeSpan(5, 0, 0, 0));
         }
 
         private static void WriteSecurityGroups(IAmazonEC2 ec2, string dataKey, IDatabase db)
@@ -138,9 +208,9 @@ namespace TopologyReader
             var sgResponse = ec2.DescribeSecurityGroups();
             foreach (var sg in sgResponse.SecurityGroups)
             {
-                var sgJson = JsonConvert.SerializeObject(sg);
-                db.SetAdd(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupName));
-                db.StringSet(string.Format("{0}-sg-{1}", dataKey, sg.GroupName), sgJson);
+                var sgJson = JsonConvert.SerializeObject(sg);                
+                AddSetToRedisWithExpiry(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupName), db);
+                AddToRedisWithExpiry(string.Format("{0}-sg-{1}", dataKey, sg.GroupName), sgJson, db);
             }
         }
 
@@ -150,9 +220,11 @@ namespace TopologyReader
             var elbResponse = elbc.DescribeLoadBalancers();
             foreach (var elb in elbResponse.LoadBalancerDescriptions)
             {
-                db.SetAdd(string.Format("{0}-lbs", dataKey), string.Format("lbg-{0}", elb.LoadBalancerName));
+                //db.SetAdd(string.Format("{0}-lbs", dataKey), string.Format("lbg-{0}", elb.LoadBalancerName));
+                AddSetToRedisWithExpiry(string.Format("{0}-lbs", dataKey), string.Format("lbg-{0}", elb.LoadBalancerName), db);
                 var elbJson = JsonConvert.SerializeObject(elb);
-                db.StringSet(string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName), elbJson);
+                //db.StringSet(string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName), elbJson);
+                AddToRedisWithExpiry(string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName), elbJson, db);
                 //code to add elb name to the instance details
                 foreach (var instance in elb.Instances)
                 {
@@ -236,7 +308,8 @@ namespace TopologyReader
             }
             catch (Exception ex)
             {
-                Log.Error("Exception occured while reading containers", ex);
+                //Log.Error("Exception occured while reading containers", ex);
+                Log.InfoFormat("Error reading containers: {0}", ex.Message);
             }
         }
 
@@ -356,7 +429,8 @@ namespace TopologyReader
             }
             catch (Exception ex)
             {
-                Log.Error("Error reading vpc endpoints", ex);
+                Log.InfoFormat("Error reading vpc endpoints: {0}", ex.Message);
+                //Log.Error("Error reading vpc endpoints", ex);
             }
         }
 
