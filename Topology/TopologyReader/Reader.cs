@@ -76,7 +76,7 @@ namespace TopologyReader
             }
             catch (Exception ex)
             {
-                Log.Error("Catch all exception", ex);
+                Log.Error("Exception occurred.", ex);
             }                                    
         }
 
@@ -125,7 +125,7 @@ namespace TopologyReader
 
         private static string GetDataKey(string accountNumber, RegionEndpoint regionEndPoint)
         {
-            var dateString = DateTime.Now.ToString("MMddyyyHHmmss");
+            var dateString = DateTime.UtcNow.ToString("MMddyyyHHmmss");
             var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionEndPoint.SystemName);
             return dataKey;
         }
@@ -189,6 +189,7 @@ namespace TopologyReader
             WriteRouteTables(ec2, dataKey, db);
             var igResponse = WriteInternetGateways(ec2, dataKey, db);
             var vgResponse = WriteVpnGateways(ec2, dataKey, db);
+            WriteVpnConnections(ec2, dataKey, db);
             WriteEnis(ec2, dataKey, db);
             WriteEbs(ec2, dataKey, db);
             WriteSnapshots(accountNumber, ec2, dataKey, db);
@@ -372,6 +373,16 @@ namespace TopologyReader
                 {
                     AddToRedisWithExpiry(string.Format("{0}-eni-{1}-{2}", dataKey, ni.VpcId, ni.Association.PublicIp), niJson, db);
                 }
+            }
+        }
+
+        private static void WriteVpnConnections(IAmazonEC2 ec2, string dataKey, IDatabase db)
+        {
+            var vcResponse = ec2.DescribeVpnConnections();
+            foreach (var vc in vcResponse.VpnConnections)
+            {
+                string vcJson = JsonConvert.SerializeObject(vc);
+                AddToRedisWithExpiry(string.Format("{0}-vc-{1}", dataKey, vc.VpnConnectionId), vcJson, db);
             }
         }
 

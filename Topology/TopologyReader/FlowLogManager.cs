@@ -21,13 +21,8 @@ namespace TopologyReader
         public static void ReadES(IDatabase db, string dataKey, int durationType, List<Subnet> subnets, List<VpnGateway> vpnGateways, List<InternetGateway> internetGateways)
         {
             List<AggregationParameter> parameters = new List<AggregationParameter>();
-
-            //AggregationParameter parameterTest = new AggregationParameter();
-            //parameterTest.AggregationIdentifier = string.Format("{0}-traffic-s2s-{1}-{2}", dataKey, "dummy", "dummy");
-            //parameterTest.SourceAggExpression = new Expression { Field = "src_subnetid", Values = new List<string> { "dummy" } };
-            //parameterTest.DestAggExpression = new Expression { Field = "src_subnetid", Values = new List<string> { "dummy" } };
-            //parameters.Add(parameterTest);
-
+            int logDurationinMin = 15;
+            int.TryParse(ConfigurationManager.AppSettings["FlowLogDurationMin"], out logDurationinMin);
             foreach (var subnet in subnets)
             {
                 foreach (var otherSubnet in subnets)
@@ -100,8 +95,6 @@ namespace TopologyReader
             //string type = "CloudTrail/Flowlogs";
             string type = ConfigurationManager.AppSettings["ESIndexType"];
 
-            //var parameters = GetAggregationParameters();
-            //var node = new Uri("http://54.186.112.5:9200");
             var node = new Uri(ConfigurationManager.AppSettings["ESEndPoint"]);
 
             var settings = new ConnectionSettings(node);
