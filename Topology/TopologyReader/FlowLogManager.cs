@@ -106,8 +106,13 @@ namespace TopologyReader
 
             var result = esClient.Search<FlowLog>(s => s.Index(index).Type(type)
                 //end of flowlog capture window should fall between the timeframe we are aggregating on
-                .Query(q => q.Filtered(filtered => filtered.Filter(filter => filter.And(expr1 => expr1.Range(r => r.GreaterOrEquals(aggStart).OnField(f => f.end)),
-                                                                                              expr2 => expr2.Range(r => r.LowerOrEquals(aggEnd).OnField(f => f.end))))))
+                .Query(q => q.Filtered(filtered => 
+                    filtered.Filter(filter => filter.And(expr1 => expr1.Range(r => r.GreaterOrEquals(aggStart).OnField(f => f.end)),
+                                                                  expr2 => expr2.Range(r => r.LowerOrEquals(aggEnd).OnField(f => f.end)),
+                                                                  expr3 => expr3.Term(p => p.action, "accept")
+                                                                  ))
+                      ))
+                //.Query(q=>q.Term(p=>p.action, "ACCEPT"))
                 .Aggregations(a => GetAggregationDescriptor(a, parameters)));
 
             if (result != null && result.Aggregations != null && result.Aggregations.Any())
