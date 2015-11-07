@@ -17,6 +17,9 @@ namespace TopologyReader
         private static readonly ILog Log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
         private static string sumOfPacketsAggKey = "sumOfPackets";
         private static string sumOfBytesAggKey = "sumOfBytes";
+        private static string actionAggKey = "Action";
+        private static string protocolAggKey = "Protocol";
+        private static string dstPortAggKey = "DstPort";
 
         public static void ReadES(IDatabase db, string dataKey, int durationType, List<Subnet> subnets, List<VpnGateway> vpnGateways, List<InternetGateway> internetGateways)
         {
@@ -74,7 +77,7 @@ namespace TopologyReader
             var flowLogAggregations = new List<FlowLogAggregation>();
             if (durationType == 0)
             {
-                flowLogAggregations = ReadES(parameters, 15);
+                flowLogAggregations = ReadES(parameters, logDurationinMin);
             }
             
             foreach (var aggregation in flowLogAggregations)
@@ -82,8 +85,12 @@ namespace TopologyReader
                 if(aggregation.SumOfBytes > 0)
                 {                    
                     Log.Debug(aggregation);
+                    aggregation.SourceType = "";
+                    aggregation.SourceId = "";
+                    aggregation.DestinationType = "";
+                    aggregation.DestinationId = "";
                     var aggregationJson = JsonConvert.SerializeObject(aggregation);
-                    Reader.AddToRedisWithExpiry(aggregation.AggregationIdentifier, aggregationJson, db);
+                    Reader.AddToRedisWithExpiry(string.Format("{0}-{1}-{2}-{3}", aggregation.AggregationIdentifier, aggregation.Action, aggregation.Protocol, aggregation.DstPort), aggregationJson, db);
                 }                
             }
         }
@@ -108,11 +115,11 @@ namespace TopologyReader
                 //end of flowlog capture window should fall between the timeframe we are aggregating on
                 .Query(q => q.Filtered(filtered => 
                     filtered.Filter(filter => filter.And(expr1 => expr1.Range(r => r.GreaterOrEquals(aggStart).OnField(f => f.end)),
-                                                                  expr2 => expr2.Range(r => r.LowerOrEquals(aggEnd).OnField(f => f.end)),
-                                                                  expr3 => expr3.Term(p => p.action, "accept")
+                                                                  expr2 => expr2.Range(r => r.LowerOrEquals(aggEnd).OnField(f => f.end))
+                                                                  //,
+                                                                  //expr3 => expr3.Term(p => p.action, "accept")
                                                                   ))
                       ))
-                //.Query(q=>q.Term(p=>p.action, "ACCEPT"))
                 .Aggregations(a => GetAggregationDescriptor(a, parameters)));
 
             if (result != null && result.Aggregations != null && result.Aggregations.Any())
@@ -143,9 +150,14 @@ namespace TopologyReader
 
                             return container;
                         }
-                            )
-                                .Aggregations(a => a.Sum(sumOfBytesAggKey, byField => byField.Field(fieldName => fieldName.bytes))
-                                                    .Sum(sumOfPacketsAggKey, byField => byField.Field(fieldName => fieldName.packets))));
+                            ).Aggregations(ag1 => ag1.Terms(actionAggKey, t1 => t1.Field(f1 => f1.action).
+                                Aggregations(ag2 => ag2.Terms(protocolAggKey, t2 => t2.Field(f2 => f2.protocol).
+                                Aggregations(ag3 => ag3.Terms(dstPortAggKey, t3 => t3.Field(f3 => f3.dstport).
+                                Aggregations(a => a.Sum(sumOfBytesAggKey, byField => byField.Field(fieldName => fieldName.bytes))
+                                                    .Sum(sumOfPacketsAggKey, byField => byField.Field(fieldName => fieldName.packets)))))))))
+
+                             );
+
                     }
                 }
             }
@@ -166,31 +178,70 @@ namespace TopologyReader
                     var srcSubnetAgg = srcSubnetAggBucket.Items.FirstOrDefault() as Nest.SingleBucket;
                     if (srcSubnetAgg != null && srcSubnetAgg.Aggregations != null && srcSubnetAgg.Aggregations.Any())
                     {
-                        var flowLogAggregation = new FlowLogAggregation
+                        if (srcSubnetAgg.Aggregations.ContainsKey(actionAggKey))
                         {
-                            AggregationIdentifier = srcSubnetKey,
-                            FlowLogsCount = srcSubnetAgg.DocCount
-                        };
+                            var actionAgg = srcSubnetAgg.Aggregations[actionAggKey] as Nest.Bucket;
 
-                        if (srcSubnetAgg.Aggregations.ContainsKey(sumOfBytesAggKey))
-                        {
-                            var sumMetric = srcSubnetAgg.Aggregations[sumOfBytesAggKey] as Nest.ValueMetric;
-                            if (sumMetric != null && sumMetric.Value.HasValue)
+                            if (actionAgg != null && actionAgg.Items.Any())
                             {
-                                flowLogAggregation.SumOfBytes = Convert.ToInt64(sumMetric.Value.Value);
+                                foreach (KeyItem actionAggItem in actionAgg.Items)
+                                {
+                                    if (actionAggItem.Aggregations != null && actionAggItem.Aggregations.Any())
+                                    {
+                                        var protocolAgg = actionAggItem.Aggregations[protocolAggKey] as Nest.Bucket;
+
+                                        if (protocolAgg != null && protocolAgg.Items.Any())
+                                        {
+                                            foreach (KeyItem protocolAggItem in protocolAgg.Items)
+                                            {
+                                                if (protocolAggItem.Aggregations != null && protocolAggItem.Aggregations.Any())
+                                                {
+                                                    if (protocolAggItem.Aggregations.ContainsKey(dstPortAggKey))
+                                                    {
+                                                        var dstPortAgg = protocolAggItem.Aggregations[dstPortAggKey] as Nest.Bucket;
+
+                                                        if (dstPortAgg != null && dstPortAgg.Items.Any())
+                                                        {
+                                                            foreach (KeyItem dstPortAggItem in dstPortAgg.Items)
+                                                            {
+                                                                var flowLogAggregation = new FlowLogAggregation
+                                                                {
+                                                                    AggregationIdentifier = srcSubnetKey,
+                                                                    FlowLogsCount = dstPortAggItem.DocCount,
+                                                                    Action = actionAggItem.Key,
+                                                                    Protocol = protocolAggItem.Key,
+                                                                    DstPort = dstPortAggItem.Key
+                                                                };
+
+                                                                if (dstPortAggItem.Aggregations.ContainsKey(sumOfBytesAggKey))
+                                                                {
+                                                                    var sumMetric = dstPortAggItem.Aggregations[sumOfBytesAggKey] as Nest.ValueMetric;
+                                                                    if (sumMetric != null && sumMetric.Value.HasValue)
+                                                                    {
+                                                                        flowLogAggregation.SumOfBytes = Convert.ToInt64(sumMetric.Value.Value);
+                                                                    }
+                                                                }
+
+                                                                if (dstPortAggItem.Aggregations.ContainsKey(sumOfPacketsAggKey))
+                                                                {
+                                                                    var sumMetric = dstPortAggItem.Aggregations[sumOfPacketsAggKey] as Nest.ValueMetric;
+                                                                    if (sumMetric != null && sumMetric.Value.HasValue)
+                                                                    {
+                                                                        flowLogAggregation.SumOfPackets = Convert.ToInt64(sumMetric.Value.Value);
+                                                                    }
+                                                                }
+
+                                                                parsedAggregations.Add(flowLogAggregation);
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
-
-                        if (srcSubnetAgg.Aggregations.ContainsKey(sumOfPacketsAggKey))
-                        {
-                            var sumMetric = srcSubnetAgg.Aggregations[sumOfPacketsAggKey] as Nest.ValueMetric;
-                            if (sumMetric != null && sumMetric.Value.HasValue)
-                            {
-                                flowLogAggregation.SumOfPackets = Convert.ToInt64(sumMetric.Value.Value);
-                            }
-                        }
-
-                        parsedAggregations.Add(flowLogAggregation);
                     }
                 }
             }
@@ -237,13 +288,20 @@ namespace TopologyReader
     {
         [JsonIgnore]
         public string AggregationIdentifier { get; set; }
+        public string SourceType { get; set; }
+        public string DestinationType { get; set; }
+        public string SourceId { get; set; }
+        public string DestinationId { get; set; }
+        public string Action { get; set; }
+        public string Protocol { get; set; }
+        public string DstPort { get; set; }
         public long FlowLogsCount { get; set; }
         public long SumOfBytes { get; set; }
         public long SumOfPackets { get; set; }
 
         public override string ToString()
         {
-            return string.Format("Aggregation={0}, Count={1}, Bytes={2}, Packets={3}", AggregationIdentifier, FlowLogsCount, SumOfBytes, SumOfPackets);
+            return string.Format("Aggregation={0}, Action={1}, Protocol={2}, DstPort={3}, Count={4}, Bytes={5}, Packets={6}", AggregationIdentifier, Action, Protocol, DstPort, FlowLogsCount, SumOfBytes, SumOfPackets);
         }
     }
     #endregion
