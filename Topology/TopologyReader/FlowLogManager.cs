@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace TopologyReader
@@ -79,19 +80,67 @@ namespace TopologyReader
             {
                 flowLogAggregations = ReadES(parameters, logDurationinMin);
             }
-            
+
+            if (flowLogAggregations == null)
+            {
+                Log.InfoFormat("No flowlog aggregations are found in ES. Reference data key: {0}", dataKey);
+                return;
+            }
             foreach (var aggregation in flowLogAggregations)
             {                
-                if(aggregation.SumOfBytes > 0)
+                if(aggregation.Details.Count() > 0)
                 {                    
                     Log.Debug(aggregation);
-                    aggregation.SourceType = "";
-                    aggregation.SourceId = "";
-                    aggregation.DestinationType = "";
-                    aggregation.DestinationId = "";
+                    PopulateAggregationMetaData(aggregation);
+                    PopulateAggregationRollupData(aggregation);
                     var aggregationJson = JsonConvert.SerializeObject(aggregation);
-                    Reader.AddToRedisWithExpiry(string.Format("{0}-{1}-{2}-{3}", aggregation.AggregationIdentifier, aggregation.Action, aggregation.Protocol, aggregation.DstPort), aggregationJson, db);
+                    Reader.AddToRedisWithExpiry(aggregation.AggregationIdentifier, aggregationJson, db);
                 }                
+            }
+        }
+
+        private static void PopulateAggregationRollupData(FlowLogAggregation aggregation)
+        {
+            long flowLogsCountAccepted = 0;
+            long sumOfBytesAccepted = 0;
+            long sumOfPacketsAccepted = 0;
+            long flowLogsCountRejected = 0;
+            long sumOfBytesRejected = 0;
+            long sumOfPacketsRejected = 0;
+            foreach (var detail in aggregation.Details)
+            {
+                if (detail.Action == "accept")
+                {
+                    flowLogsCountAccepted += detail.FlowLogsCount;
+                    sumOfBytesAccepted += detail.SumOfBytes;
+                    sumOfPacketsAccepted += detail.SumOfPackets;
+                }
+                else
+                {
+                    flowLogsCountRejected += detail.FlowLogsCount;
+                    sumOfBytesRejected += detail.SumOfBytes;
+                    sumOfPacketsRejected += detail.SumOfPackets;
+                }
+            }
+            aggregation.FlowLogsCountAccepted = flowLogsCountAccepted;
+            aggregation.SumOfBytesAccepted = sumOfBytesAccepted;
+            aggregation.SumOfPacketsAccepted = sumOfPacketsAccepted;
+            aggregation.FlowLogsCountRejected = flowLogsCountRejected;
+            aggregation.SumOfBytesRejected = sumOfBytesRejected;
+            aggregation.SumOfPacketsRejected = sumOfPacketsRejected;
+        }
+
+        private static void PopulateAggregationMetaData(FlowLogAggregation aggregation)
+        {
+            //"11072015203903-990008671661-us-west-2-traffic-i2s-igw-10cb6e75-subnet-ac833adb"
+            var regex = new Regex(@"^(\d+)-(\d+)-(.*-.*-.*)-(traffic)-(.*)-(.*-.*)-(.*-.*)$");
+            var match = regex.Match(aggregation.AggregationIdentifier);
+            if (match.Groups.Count == 8)
+            {
+                aggregation.SourceId = match.Groups[6].ToString();
+                aggregation.DestinationId = match.Groups[7].ToString();
+                aggregation.SourceType = aggregation.SourceId.Split('-')[0];
+                aggregation.DestinationType = aggregation.DestinationId.Split('-')[0];
             }
         }
 
@@ -116,8 +165,6 @@ namespace TopologyReader
                 .Query(q => q.Filtered(filtered => 
                     filtered.Filter(filter => filter.And(expr1 => expr1.Range(r => r.GreaterOrEquals(aggStart).OnField(f => f.end)),
                                                                   expr2 => expr2.Range(r => r.LowerOrEquals(aggEnd).OnField(f => f.end))
-                                                                  //,
-                                                                  //expr3 => expr3.Term(p => p.action, "accept")
                                                                   ))
                       ))
                 .Aggregations(a => GetAggregationDescriptor(a, parameters)));
@@ -172,6 +219,9 @@ namespace TopologyReader
 
             foreach (string srcSubnetKey in aggregations.Keys)
             {
+                var flowLogAggregation = new FlowLogAggregation();
+                flowLogAggregation.AggregationIdentifier = srcSubnetKey;
+                var listFlowLogAggregationDetail = new List<FlowLogAggregationDetail>();
                 var srcSubnetAggBucket = aggregations[srcSubnetKey] as Nest.Bucket;
                 if (srcSubnetAggBucket != null && srcSubnetAggBucket.Items != null)
                 {
@@ -204,9 +254,8 @@ namespace TopologyReader
                                                         {
                                                             foreach (KeyItem dstPortAggItem in dstPortAgg.Items)
                                                             {
-                                                                var flowLogAggregation = new FlowLogAggregation
+                                                                var flowLogAggregationDetail = new FlowLogAggregationDetail
                                                                 {
-                                                                    AggregationIdentifier = srcSubnetKey,
                                                                     FlowLogsCount = dstPortAggItem.DocCount,
                                                                     Action = actionAggItem.Key,
                                                                     Protocol = protocolAggItem.Key,
@@ -218,7 +267,7 @@ namespace TopologyReader
                                                                     var sumMetric = dstPortAggItem.Aggregations[sumOfBytesAggKey] as Nest.ValueMetric;
                                                                     if (sumMetric != null && sumMetric.Value.HasValue)
                                                                     {
-                                                                        flowLogAggregation.SumOfBytes = Convert.ToInt64(sumMetric.Value.Value);
+                                                                        flowLogAggregationDetail.SumOfBytes = Convert.ToInt64(sumMetric.Value.Value);
                                                                     }
                                                                 }
 
@@ -227,11 +276,11 @@ namespace TopologyReader
                                                                     var sumMetric = dstPortAggItem.Aggregations[sumOfPacketsAggKey] as Nest.ValueMetric;
                                                                     if (sumMetric != null && sumMetric.Value.HasValue)
                                                                     {
-                                                                        flowLogAggregation.SumOfPackets = Convert.ToInt64(sumMetric.Value.Value);
+                                                                        flowLogAggregationDetail.SumOfPackets = Convert.ToInt64(sumMetric.Value.Value);
                                                                     }
                                                                 }
-
-                                                                parsedAggregations.Add(flowLogAggregation);
+                                                                listFlowLogAggregationDetail.Add(flowLogAggregationDetail);
+                                                                
                                                             }
                                                         }
                                                     }
@@ -244,8 +293,9 @@ namespace TopologyReader
                         }
                     }
                 }
+                flowLogAggregation.Details = listFlowLogAggregationDetail.ToArray();
+                parsedAggregations.Add(flowLogAggregation);
             }
-
             return parsedAggregations;
         }
         #endregion
@@ -286,12 +336,27 @@ namespace TopologyReader
     #region FlowLogAggregation
     public class FlowLogAggregation
     {
-        [JsonIgnore]
         public string AggregationIdentifier { get; set; }
         public string SourceType { get; set; }
         public string DestinationType { get; set; }
         public string SourceId { get; set; }
         public string DestinationId { get; set; }
+        public long FlowLogsCountAccepted { get; set; }
+        public long SumOfBytesAccepted { get; set; }
+        public long SumOfPacketsAccepted { get; set; }
+        public long FlowLogsCountRejected { get; set; }
+        public long SumOfBytesRejected { get; set; }
+        public long SumOfPacketsRejected { get; set; }
+        public FlowLogAggregationDetail[] Details { get; set; }
+
+        public override string ToString()
+        {
+            return string.Format("Aggregation={0}, Detail={1}", AggregationIdentifier, Details);
+        }
+    }
+
+    public class FlowLogAggregationDetail
+    {
         public string Action { get; set; }
         public string Protocol { get; set; }
         public string DstPort { get; set; }
@@ -301,7 +366,7 @@ namespace TopologyReader
 
         public override string ToString()
         {
-            return string.Format("Aggregation={0}, Action={1}, Protocol={2}, DstPort={3}, Count={4}, Bytes={5}, Packets={6}", AggregationIdentifier, Action, Protocol, DstPort, FlowLogsCount, SumOfBytes, SumOfPackets);
+            return string.Format("Action={0}, Protocol={1}, DstPort={2}, Count={3}, Bytes={4}, Packets={5}", Action, Protocol, DstPort, FlowLogsCount, SumOfBytes, SumOfPackets);
         }
     }
     #endregion
