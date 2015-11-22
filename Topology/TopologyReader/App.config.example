@@ -6,8 +6,8 @@
   </configSections>
   <appSettings>
     <!--<add key="AWSProfileName" value="default"/>-->
-    <add key="AWSAccessKey" value="AKIAJU2W6P35CTP2FHVQ"/>
-    <add key="AWSSecretKey" value="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"/>
+    <add key="AWSAccessKey" value=""/>
+    <add key="AWSSecretKey" value=""/>
     <!--<add key="AWSRegion" value="us-west-2" />-->
     <add key="RedisEndPoint" value="52.89.239.156"/>
     <add key="RedisKeysTTLDays" value="5"/>

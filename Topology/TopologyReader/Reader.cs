@@ -221,7 +221,7 @@ namespace TopologyReader
             foreach (var sg in sgResponse.SecurityGroups)
             {
                 var sgJson = JsonConvert.SerializeObject(sg);                
-                AddSetToRedisWithExpiry(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupName), db);
+                AddSetToRedisWithExpiry(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupId), db);
                 AddToRedisWithExpiry(string.Format("{0}-sg-{1}", dataKey, sg.GroupName), sgJson, db);
             }
         }
