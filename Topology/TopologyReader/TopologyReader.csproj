@@ -108,6 +108,9 @@
     <Reference Include="AWSSDK.RDS">
       <HintPath>..\..\..\..\..\Program Files (x86)\AWS SDK for .NET\bin\Net45\AWSSDK.RDS.dll</HintPath>
     </Reference>
+    <Reference Include="AWSSDK.SQS">
+      <HintPath>..\..\..\..\..\Program Files (x86)\AWS SDK for .NET\bin\Net45\AWSSDK.SQS.dll</HintPath>
+    </Reference>
     <Reference Include="CsvHelper, Version=2.0.0.0, Culture=neutral, PublicKeyToken=8c4959082be5c823, processorArchitecture=MSIL">
       <HintPath>..\packages\CsvHelper.2.13.2.0\lib\net40-client\CsvHelper.dll</HintPath>
       <Private>True</Private>
@@ -141,6 +144,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="AWSConfigReader.cs" />
+    <Compile Include="Data\ConfigNotification.cs" />
     <Compile Include="Data\FlowLog.cs" />
     <Compile Include="Data\Instance.cs" />
     <Compile Include="Data\Subnet.cs" />
@@ -148,6 +153,7 @@
     <Compile Include="FlowLogManager.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Include="Helpers\Common.cs" />
     <Compile Include="Reader.cs" />
     <Compile Include="assemblyinfo.cs" />
   </ItemGroup>

@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using TopologyReader.Helpers;
 
 namespace TopologyReader
 {    
@@ -94,7 +95,7 @@ namespace TopologyReader
                     PopulateAggregationMetaData(aggregation);
                     PopulateAggregationRollupData(aggregation);
                     var aggregationJson = JsonConvert.SerializeObject(aggregation);
-                    Reader.AddToRedisWithExpiry(aggregation.AggregationIdentifier, aggregationJson, db);
+                    Common.AddToRedisWithExpiry(aggregation.AggregationIdentifier, aggregationJson, db);
                 }                
             }
         }
