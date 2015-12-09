@@ -154,6 +154,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="Helpers\Common.cs" />
+    <Compile Include="Helpers\RedisManager.cs" />
     <Compile Include="Reader.cs" />
     <Compile Include="assemblyinfo.cs" />
   </ItemGroup>

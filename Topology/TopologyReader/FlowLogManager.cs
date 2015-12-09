@@ -95,7 +95,7 @@ namespace TopologyReader
                     PopulateAggregationMetaData(aggregation);
                     PopulateAggregationRollupData(aggregation);
                     var aggregationJson = JsonConvert.SerializeObject(aggregation);
-                    Common.AddToRedisWithExpiry(aggregation.AggregationIdentifier, aggregationJson, db);
+                    RedisManager.AddWithExpiry(aggregation.AggregationIdentifier, aggregationJson, db);
                 }                
             }
         }

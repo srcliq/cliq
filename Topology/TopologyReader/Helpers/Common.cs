@@ -13,22 +13,7 @@ namespace TopologyReader.Helpers
 {
     public static class Common
     {
-        private static int redisTTL = 5;
-        private static ConnectionMultiplexer redis = ConnectionMultiplexer.Connect(ConfigurationManager.AppSettings["RedisEndPoint"]);
-        private static IDatabase redisDb = null;
-
-        internal static IDatabase GetRedisDatabase(){
-            if (redisDb == null)
-            {
-                redisDb = redis.GetDatabase();
-            }
-            return redisDb;
-        }
-
-        internal static void SetRedisTTL(int ttl)
-        {
-            redisTTL = ttl;
-        }
+        
 
         public static string GetAccountNumber()
         {
@@ -56,7 +41,7 @@ namespace TopologyReader.Helpers
 
         public static string GetDataKey(DateTime date, string accountNumber, string regionName)
         {
-            var dateString = date.ToString("MMddyyyHHmmss");
+            var dateString = date.ToString("yyyyMMddHHmmss");
             var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionName);
             return dataKey;
         }
@@ -65,41 +50,6 @@ namespace TopologyReader.Helpers
         {            
             var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionName);
             return dataKey;
-        }
-
-        internal static void AddToRedisWithExpiry(string key, string value, IDatabase db)
-        {
-            db.StringSet(key, value);
-            db.KeyExpire(key, new TimeSpan(redisTTL, 0, 0, 0));
-        }
-
-        internal static void AddSetToRedisWithExpiry(string key, string value, IDatabase db)
-        {
-            db.SetAdd(key, value);
-            db.KeyExpire(key, new TimeSpan(redisTTL, 0, 0, 0));
-        }
-
-        internal static RedisValue[] GetSet(string key, IDatabase db)
-        {
-            return db.SetMembers(key);
-        }
-
-        internal static bool RemoveSetMember(string key, string value, IDatabase db)
-        {
-            var members = db.SetMembers(key);
-            foreach (var member in members)
-            {
-                if (member.ToString().Contains(value))
-                {
-                    return db.SetRemove(key, member);
-                }
-            }
-            return false;
-        }
-
-        internal static void CopySetAndStore(RedisKey destinationSetKey, RedisKey sourceSetKey, IDatabase db)
-        {
-            db.SetCombineAndStore(SetOperation.Union, destinationSetKey, new RedisKey[]{sourceSetKey});
         }
     }
 }

@@ -67,27 +67,29 @@ namespace TopologyReader
                                 var newDataKey = Common.GetDataKey(captureTime, configuration.AWSAccountId, configuration.AWSRegion);
                                 var dataKey = Common.GetDataKey(configuration.AWSAccountId, configuration.AWSRegion);
                                 var instanceKey = string.Format("{0}-ins-{1}", dataKey, instance.InstanceId);
-                                var db = Common.GetRedisDatabase();
-                                Common.AddToRedisWithExpiry(instanceKey, instanceJson, db);
-                                if (Common.GetSet("LATEST-INS", db).Length > 0)
+                                var db = RedisManager.GetRedisDatabase();
+                                RedisManager.AddWithExpiry(instanceKey, instanceJson, db);
+                                if (RedisManager.GetSet(latestInstanceSetKey, db).Length > 0)
                                 {
                                     switch (configurationItemDiff.ChangeType)
                                     {
                                         case "CREATE":
-                                            Common.AddSetToRedisWithExpiry(latestInstanceSetKey, instanceKey, db);
+                                            RedisManager.AddSetWithExpiry(latestInstanceSetKey, instanceKey, db);
                                             break;
                                         case "UPDATE":
-                                            Common.RemoveSetMember(latestInstanceSetKey, instanceKey, db);
-                                            Common.AddSetToRedisWithExpiry(latestInstanceSetKey, instanceKey, db);
+                                            RedisManager.RemoveSetMember(latestInstanceSetKey, instanceKey, db);
+                                            RedisManager.AddSetWithExpiry(latestInstanceSetKey, instanceKey, db);
                                             break;
                                         case "DELETE":
-                                            Common.RemoveSetMember(latestInstanceSetKey, instanceKey, db);
+                                            RedisManager.RemoveSetMember(latestInstanceSetKey, instanceKey, db);
                                             break;
                                         default:
                                             break;
                                     }                                                     
                                 }
-                                Common.CopySetAndStore(string.Format("{0}-ins", newDataKey), "latest-ins", db);
+                                var newInstanceSetKey = string.Format("{0}-ins", newDataKey);
+                                RedisManager.CopySetAndStore(newInstanceSetKey, latestInstanceSetKey, db);
+                                RedisManager.AddSortedSet(string.Format("timeline-{0}-{1}-ins", configuration.AWSAccountId, configuration.AWSRegion), newInstanceSetKey, db);
                                 break;
                             case "AWS::EC2::NetworkInterface":
                                 var eni = JsonConvert.DeserializeObject<Amazon.EC2.Model.NetworkInterface>(configuration.configuration.ToString(), new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
