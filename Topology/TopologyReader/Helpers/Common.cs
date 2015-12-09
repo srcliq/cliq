@@ -51,7 +51,18 @@ namespace TopologyReader.Helpers
 
         public static string GetDataKey(string accountNumber, string regionName)
         {
-            var dateString = DateTime.UtcNow.ToString("MMddyyyHHmmss");
+            return GetDataKey(DateTime.UtcNow, accountNumber, regionName);
+        }
+
+        public static string GetDataKey(DateTime date, string accountNumber, string regionName)
+        {
+            var dateString = date.ToString("MMddyyyHHmmss");
+            var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionName);
+            return dataKey;
+        }
+
+        public static string GetDataKey(string dateString, string accountNumber, string regionName)
+        {            
             var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionName);
             return dataKey;
         }
@@ -71,6 +82,24 @@ namespace TopologyReader.Helpers
         internal static RedisValue[] GetSet(string key, IDatabase db)
         {
             return db.SetMembers(key);
+        }
+
+        internal static bool RemoveSetMember(string key, string value, IDatabase db)
+        {
+            var members = db.SetMembers(key);
+            foreach (var member in members)
+            {
+                if (member.ToString().Contains(value))
+                {
+                    return db.SetRemove(key, member);
+                }
+            }
+            return false;
+        }
+
+        internal static void CopySetAndStore(RedisKey destinationSetKey, RedisKey sourceSetKey, IDatabase db)
+        {
+            db.SetCombineAndStore(SetOperation.Union, destinationSetKey, new RedisKey[]{sourceSetKey});
         }
     }
 }

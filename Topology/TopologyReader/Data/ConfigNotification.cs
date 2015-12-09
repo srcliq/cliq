@@ -29,6 +29,7 @@ namespace TopologyReader.Data
         public string ResourceType { get; set; }
         public string AWSAccountId { get; set; }
         public string AWSRegion { get; set; }
+        public string ConfigurationItemCaptureTime { get; set; }
     }
 
     class ConfigurationItemDiff

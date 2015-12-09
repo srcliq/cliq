@@ -3,6 +3,7 @@ using Amazon.SQS;
 using Amazon.SQS.Model;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System;
 using TopologyReader.Data;
 using TopologyReader.Helpers;
 
@@ -57,7 +58,13 @@ namespace TopologyReader
                                 break;
                             case "AWS::EC2::Instance":
                                 var instance = JsonConvert.DeserializeObject<Amazon.EC2.Model.Instance>(configuration.configuration.ToString(), new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
-                                var instanceJson = JsonConvert.SerializeObject(instance); 
+                                var instanceJson = JsonConvert.SerializeObject(instance);
+                                var captureTimeString = configuration.ConfigurationItemCaptureTime;
+                                var captureTime = DateTime.UtcNow;
+                                DateTime.TryParse(captureTimeString, out captureTime);
+                                var latestDataKey = Common.GetDataKey("latest", configuration.AWSAccountId, configuration.AWSRegion);
+                                var latestInstanceSetKey = string.Format("{0}-ins", latestDataKey);
+                                var newDataKey = Common.GetDataKey(captureTime, configuration.AWSAccountId, configuration.AWSRegion);
                                 var dataKey = Common.GetDataKey(configuration.AWSAccountId, configuration.AWSRegion);
                                 var instanceKey = string.Format("{0}-ins-{1}", dataKey, instance.InstanceId);
                                 var db = Common.GetRedisDatabase();
@@ -67,17 +74,20 @@ namespace TopologyReader
                                     switch (configurationItemDiff.ChangeType)
                                     {
                                         case "CREATE":
-                                            Common.AddSetToRedisWithExpiry("LATEST-INS", instanceKey, db);
+                                            Common.AddSetToRedisWithExpiry(latestInstanceSetKey, instanceKey, db);
                                             break;
                                         case "UPDATE":
+                                            Common.RemoveSetMember(latestInstanceSetKey, instanceKey, db);
+                                            Common.AddSetToRedisWithExpiry(latestInstanceSetKey, instanceKey, db);
                                             break;
                                         case "DELETE":
-                                            //db.SetPop();
+                                            Common.RemoveSetMember(latestInstanceSetKey, instanceKey, db);
                                             break;
                                         default:
                                             break;
                                     }                                                     
                                 }
+                                Common.CopySetAndStore(string.Format("{0}-ins", newDataKey), "latest-ins", db);
                                 break;
                             case "AWS::EC2::NetworkInterface":
                                 var eni = JsonConvert.DeserializeObject<Amazon.EC2.Model.NetworkInterface>(configuration.configuration.ToString(), new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore });
