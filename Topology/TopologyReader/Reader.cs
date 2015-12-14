@@ -165,9 +165,11 @@ namespace TopologyReader
                 return;
             }
 
-            var dataKey = Common.GetDataKey(accountNumber, regionEndPoint);            
+            var currentDateTime = DateTime.UtcNow;
+            var dataKey = Common.GetDataKey(currentDateTime, accountNumber, regionEndPoint.SystemName);            
             db.SetAdd("TS", dataKey);            
             db.StringSet(string.Format("LATESTTS-{0}-{1}", accountNumber, regionEndPoint.SystemName), dataKey);
+
 
             WriteVpcs(ec2, dataKey, db);
             WriteVpcPeeringConnections(ec2, dataKey, db);
@@ -188,9 +190,7 @@ namespace TopologyReader
             WriteSecurityGroups(ec2, dataKey, db);
                         
             Log.InfoFormat("End writing data to redis ({0})", regionEndPoint.SystemName);
-        }
-
-        
+        }        
 
         private static void WriteSecurityGroups(IAmazonEC2 ec2, string dataKey, IDatabase db)
         {
@@ -199,7 +199,19 @@ namespace TopologyReader
             {
                 var sgJson = JsonConvert.SerializeObject(sg);                
                 RedisManager.AddSetWithExpiry(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupId), db);
-                RedisManager.AddWithExpiry(string.Format("{0}-sg-{1}", dataKey, sg.GroupName), sgJson, db);
+                RedisManager.AddWithExpiry(string.Format("{0}-sg-{1}", dataKey, sg.GroupId), sgJson, db);             
+            }
+        }
+
+        private static void WriteSecurityGroups(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        {
+            var sgResponse = ec2.DescribeSecurityGroups();
+            foreach (var sg in sgResponse.SecurityGroups)
+            {
+                var sgJson = JsonConvert.SerializeObject(sg);
+                //RedisManager.AddSetWithExpiry(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupId), db);
+                //RedisManager.AddWithExpiry(string.Format("{0}-sg-{1}", dataKey, sg.GroupId), sgJson, db);
+                Common.UpdateTopology(captureTime, accountId, region, "sg", sg.GroupId, sgJson, "UPDATE");
             }
         }
 

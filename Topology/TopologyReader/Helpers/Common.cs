@@ -8,6 +8,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using TopologyReader.Data;
 
 namespace TopologyReader.Helpers
 {
@@ -50,6 +51,92 @@ namespace TopologyReader.Helpers
         {            
             var dataKey = string.Format("{0}-{1}-{2}", dateString, accountNumber, regionName);
             return dataKey;
+        }
+
+        internal static void UpdateTopology(ConfigurationItem configuration, string entityIdentifier, string entityId, string entityJson, string changeType)
+        {
+            var captureTimeString = configuration.ConfigurationItemCaptureTime;
+            DateTime captureTime;
+            if (!DateTime.TryParse(captureTimeString, out captureTime))
+            {
+                captureTime = DateTime.UtcNow;
+            }
+            UpdateTopology(captureTime, configuration.AWSAccountId, configuration.AWSRegion, entityIdentifier, entityId, entityJson, changeType);
+            //var latestDataKey = Common.GetDataKey("latest", configuration.AWSAccountId, configuration.AWSRegion);
+            //var newDataKey = Common.GetDataKey(captureTime, configuration.AWSAccountId, configuration.AWSRegion);
+
+            //var latestEntitySetKey = string.Format("{0}-{1}set", latestDataKey, entityIdentifier);
+            //var newEntitySetKey = string.Format("{0}-{1}set", newDataKey, entityIdentifier);
+
+            //var entityTimelineSetKey = string.Format("timeline-{0}-{1}-{2}", configuration.AWSAccountId, configuration.AWSRegion, entityIdentifier);
+
+            //var dataKey = Common.GetDataKey(configuration.AWSAccountId, configuration.AWSRegion);
+            //var entityKey = string.Format("{0}-{1}-{2}", dataKey, entityIdentifier, entityId);
+            //var db = RedisManager.GetRedisDatabase();
+            //RedisManager.AddWithExpiry(entityKey, entityJson, db);
+            //if (RedisManager.GetSet(latestEntitySetKey, db).Length > 0)
+            //{
+            //    switch (changeType)
+            //    {
+            //        case "CREATE":
+            //            RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
+            //            break;
+            //        case "UPDATE":
+            //            RedisManager.RemoveSetMember(latestEntitySetKey, entityKey, db);
+            //            RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
+            //            break;
+            //        case "DELETE":
+            //            RedisManager.RemoveSetMember(latestEntitySetKey, entityKey, db);
+            //            break;
+            //        default:
+            //            break;
+            //    }
+            //}
+            //RedisManager.CopySetAndStore(newEntitySetKey, latestEntitySetKey, db);
+            //RedisManager.AddSortedSet(entityTimelineSetKey, newEntitySetKey, db);
+        }
+
+        internal static void UpdateTopology(DateTime captureTime, string accountId, string region, string entityIdentifier, string entityId, string entityJson, string changeType)
+        {
+            var latestDataKey = Common.GetDataKey("latest", accountId, region);
+            var newDataKey = Common.GetDataKey(captureTime, accountId, region);
+
+            var latestEntitySetKey = string.Format("{0}-{1}set", latestDataKey, entityIdentifier);
+            var newEntitySetKey = string.Format("{0}-{1}set", newDataKey, entityIdentifier);
+
+            var entityTimelineSetKey = string.Format("timeline-{0}-{1}-{2}", accountId, region, entityIdentifier);
+
+            var dataKey = Common.GetDataKey(accountId, region);
+            var entityKey = string.Format("{0}-{1}-{2}", dataKey, entityIdentifier, entityId);
+            var db = RedisManager.GetRedisDatabase();
+            RedisManager.AddWithExpiry(entityKey, entityJson, db);
+            if (RedisManager.GetSet(latestEntitySetKey, db).Length > 0)
+            {
+                if (string.IsNullOrEmpty(changeType))
+                {
+                    RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
+                }
+                else
+                {
+                    switch (changeType)
+                    {
+                        case "CREATE":
+                            RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
+                            break;
+                        case "UPDATE":
+                            RedisManager.RemoveSetMember(latestEntitySetKey, entityKey, db);
+                            RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
+                            break;
+                        case "DELETE":
+                            RedisManager.RemoveSetMember(latestEntitySetKey, entityKey, db);
+                            break;
+                        default:
+                            break;
+                    }
+                }                
+            }
+            RedisManager.CopySetAndStore(newEntitySetKey, latestEntitySetKey, db);
+            RedisManager.AddSortedSet(entityTimelineSetKey, newEntitySetKey, db);
         }
     }
 }
