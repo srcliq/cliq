@@ -1,16 +1,33 @@
-﻿using Amazon.EC2;
+﻿using Amazon;
+using Amazon.AutoScaling;
+using Amazon.AutoScaling.Model;
+using Amazon.EC2;
 using Amazon.EC2.Model;
+using Amazon.ECS;
+using Amazon.ECS.Model;
+using Amazon.ElasticLoadBalancing;
+using Amazon.RDS;
+using ConnectionSettings = Amazon.ElasticLoadBalancing.Model.ConnectionSettings;
+using DescribeInstancesRequest = Amazon.EC2.Model.DescribeInstancesRequest;
+using DescribeInstancesResponse = Amazon.EC2.Model.DescribeInstancesResponse;
+using Filter = Amazon.EC2.Model.Filter;
+using Tag = Amazon.EC2.Model.Tag;
+using Vpc = Amazon.EC2.Model.Vpc;
 using Newtonsoft.Json;
+using StackExchange.Redis;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using log4net;
 
 namespace TopologyReader.Helpers
 {
     public static class TopologyWriter
     {
+        internal static readonly ILog Log = log4net.LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
+
         internal static void WriteSecurityGroups(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var sgResponse = ec2.DescribeSecurityGroups();
@@ -21,7 +38,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteElbs(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
+        internal static void WriteElbs(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
         {
             var elbc = new AmazonElasticLoadBalancingClient(regionEndPoint);
             var elbResponse = elbc.DescribeLoadBalancers();
@@ -48,7 +65,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteAsgs(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
+        internal static void WriteAsgs(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
         {
             var asc = new AmazonAutoScalingClient(regionEndPoint);
             DescribeAutoScalingGroupsResponse asgResponse = asc.DescribeAutoScalingGroups();
@@ -76,7 +93,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteInstances(IAmazonEC2 ec2, string dataKey, IDatabase db)
+        internal static void WriteInstances(IAmazonEC2 ec2, string dataKey, IDatabase db)
         {
             DescribeInstancesResponse instanceResponse = ec2.DescribeInstances();
             var dKey = string.Empty;
@@ -95,7 +112,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteContainers(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
+        internal static void WriteContainers(DateTime captureTime, string accountId, RegionEndpoint regionEndPoint)
         {
             try
             {
@@ -106,8 +123,8 @@ namespace TopologyReader.Helpers
                     var ecsResponse = ecsClient.DescribeContainerInstances(new DescribeContainerInstancesRequest { Cluster = cluster });
                     foreach (var ecs in ecsResponse.ContainerInstances)
                     {
-                        string ecsJson = JsonConvert.SerializeObject(ecs);
-                        RedisManager.AddWithExpiry(string.Format("{0}-ecs-{1}", dataKey, ecs.Ec2InstanceId), ecsJson, db);
+                        string ecsJson = JsonConvert.SerializeObject(ecs);                        
+                        Common.UpdateTopology(captureTime, accountId, regionEndPoint.SystemName, "ecs", ecs.Ec2InstanceId, ecsJson, "UPDATE");
                     }
                 }
             }
@@ -118,45 +135,45 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteRds(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
+        internal static void WriteRds(DateTime captureTime, string accountId, RegionEndpoint regionEndPoint)
         {
             var rdsClient = new AmazonRDSClient(regionEndPoint);
             var rdsInstanceResponse = rdsClient.DescribeDBInstances();
             foreach (var dbInstance in rdsInstanceResponse.DBInstances)
             {
-                string dbJson = JsonConvert.SerializeObject(dbInstance);
-                RedisManager.AddWithExpiry(string.Format("{0}-rds-{1}", dataKey, dbInstance.DBInstanceIdentifier), dbJson, db);
+                string dbJson = JsonConvert.SerializeObject(dbInstance);                
+                Common.UpdateTopology(captureTime, accountId, regionEndPoint.SystemName, "rds", dbInstance.DBInstanceIdentifier, dbJson, "UPDATE");
             }
         }
 
-        private static void WriteSnapshots(string accountNumber, IAmazonEC2 ec2, string dataKey, IDatabase db)
+        internal static void WriteSnapshots(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var describeSnapshotRequest = new DescribeSnapshotsRequest();
             var filters = new List<Filter>();
             var filter = new Filter();
             filter.Name = "owner-id";
-            filter.Values = new List<string> { accountNumber };
+            filter.Values = new List<string> { accountId };
             filters.Add(filter);
             describeSnapshotRequest.Filters = filters;
             var ssResponse = ec2.DescribeSnapshots(describeSnapshotRequest);
             foreach (var snapshot in ssResponse.Snapshots)
             {
-                string snapshotJson = JsonConvert.SerializeObject(snapshot);
-                RedisManager.AddWithExpiry(string.Format("{0}-ss-{1}", dataKey, snapshot.SnapshotId), snapshotJson, db);
+                string snapshotJson = JsonConvert.SerializeObject(snapshot);                
+                Common.UpdateTopology(captureTime, accountId, region, "ss", snapshot.SnapshotId, snapshotJson, "UPDATE");
             }
         }
 
-        private static void WriteEbs(IAmazonEC2 ec2, string dataKey, IDatabase db)
+        internal static void WriteEbs(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var ebsResponse = ec2.DescribeVolumes();
             foreach (var volume in ebsResponse.Volumes)
             {
-                string volumeJson = JsonConvert.SerializeObject(volume);
-                RedisManager.AddWithExpiry(string.Format("{0}-ebs-{1}", dataKey, volume.VolumeId), volumeJson, db);
+                string volumeJson = JsonConvert.SerializeObject(volume);                
+                Common.UpdateTopology(captureTime, accountId, region, "ebs", volume.VolumeId, volumeJson, "UPDATE");
             }
         }
 
-        private static void WriteEnis(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static void WriteEnis(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var eniResponse = ec2.DescribeNetworkInterfaces();
             foreach (var ni in eniResponse.NetworkInterfaces)
@@ -171,7 +188,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteVpnConnections(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static void WriteVpnConnections(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var vcResponse = ec2.DescribeVpnConnections();
             foreach (var vc in vcResponse.VpnConnections)
@@ -181,7 +198,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static DescribeVpnGatewaysResponse WriteVpnGateways(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static DescribeVpnGatewaysResponse WriteVpnGateways(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var vgResponse = ec2.DescribeVpnGateways();
             foreach (var vg in vgResponse.VpnGateways)
@@ -192,7 +209,7 @@ namespace TopologyReader.Helpers
             return vgResponse;
         }
 
-        private static DescribeInternetGatewaysResponse WriteInternetGateways(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static DescribeInternetGatewaysResponse WriteInternetGateways(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var igResponse = ec2.DescribeInternetGateways();
             foreach (var ig in igResponse.InternetGateways)
@@ -203,7 +220,7 @@ namespace TopologyReader.Helpers
             return igResponse;
         }
 
-        private static void WriteRouteTables(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static void WriteRouteTables(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var rtResponse = ec2.DescribeRouteTables();
             foreach (var rt in rtResponse.RouteTables)
@@ -213,7 +230,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static DescribeSubnetsResponse WriteSubnets(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static DescribeSubnetsResponse WriteSubnets(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var subnetResponse = ec2.DescribeSubnets();
             foreach (var subnet in subnetResponse.Subnets)
@@ -231,7 +248,7 @@ namespace TopologyReader.Helpers
             return subnetResponse;
         }
 
-        private static void WriteVpcEndPoints(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static void WriteVpcEndPoints(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var vpcEndPointsRequest = new DescribeVpcEndpointsRequest();
             try
@@ -250,7 +267,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteVpcPeeringConnections(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static void WriteVpcPeeringConnections(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             DescribeVpcPeeringConnectionsResponse vpcPeeringResponses = ec2.DescribeVpcPeeringConnections();
             foreach (var vpcPeer in vpcPeeringResponses.VpcPeeringConnections)
@@ -260,7 +277,7 @@ namespace TopologyReader.Helpers
             }
         }
 
-        private static void WriteVpcs(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        internal static void WriteVpcs(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             DescribeVpcsResponse vpcResponse = ec2.DescribeVpcs();
             foreach (Vpc vpc in vpcResponse.Vpcs)

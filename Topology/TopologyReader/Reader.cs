@@ -188,7 +188,25 @@ namespace TopologyReader
             WriteAsgs(regionEndPoint, dataKey, db);
             WriteElbs(regionEndPoint, dataKey, db);
             WriteSecurityGroups(ec2, dataKey, db);
-                        
+
+            TopologyWriter.WriteVpcs(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpcPeeringConnections(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpcEndPoints(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteSubnets(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteRouteTables(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteInternetGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpnGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpnConnections(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteEnis(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteEbs(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteSnapshots(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteRds(currentDateTime, accountNumber, regionEndPoint);
+            TopologyWriter.WriteContainers(currentDateTime, accountNumber, regionEndPoint);
+            TopologyWriter.WriteInstances(ec2, dataKey, db);
+            TopologyWriter.WriteAsgs(regionEndPoint, dataKey, db);
+            TopologyWriter.WriteElbs(regionEndPoint, dataKey, db);
+            TopologyWriter.WriteSecurityGroups(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+
             Log.InfoFormat("End writing data to redis ({0})", regionEndPoint.SystemName);
         }        
 
@@ -200,18 +218,6 @@ namespace TopologyReader
                 var sgJson = JsonConvert.SerializeObject(sg);                
                 RedisManager.AddSetWithExpiry(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupId), db);
                 RedisManager.AddWithExpiry(string.Format("{0}-sg-{1}", dataKey, sg.GroupId), sgJson, db);             
-            }
-        }
-
-        private static void WriteSecurityGroups(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
-        {
-            var sgResponse = ec2.DescribeSecurityGroups();
-            foreach (var sg in sgResponse.SecurityGroups)
-            {
-                var sgJson = JsonConvert.SerializeObject(sg);
-                //RedisManager.AddSetWithExpiry(string.Format("{0}-sgs", dataKey), string.Format("sg-{0}", sg.GroupId), db);
-                //RedisManager.AddWithExpiry(string.Format("{0}-sg-{1}", dataKey, sg.GroupId), sgJson, db);
-                Common.UpdateTopology(captureTime, accountId, region, "sg", sg.GroupId, sgJson, "UPDATE");
             }
         }
 
