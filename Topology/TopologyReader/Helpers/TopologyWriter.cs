@@ -38,65 +38,84 @@ namespace TopologyReader.Helpers
             }
         }
 
-        internal static void WriteElbs(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
+        internal static void WriteElbs(DateTime captureTime, string accountId, RegionEndpoint regionEndPoint)
         {
             var elbc = new AmazonElasticLoadBalancingClient(regionEndPoint);
             var elbResponse = elbc.DescribeLoadBalancers();
+            var db = RedisManager.GetRedisDatabase();
             foreach (var elb in elbResponse.LoadBalancerDescriptions)
             {
-                RedisManager.AddSetWithExpiry(string.Format("{0}-lbs", dataKey), string.Format("lbg-{0}", elb.LoadBalancerName), db);
+                //to do: may not be required.
+                //RedisManager.AddSetWithExpiry(string.Format("{0}-lbs", dataKey), string.Format("lbg-{0}", elb.LoadBalancerName), db);
+                
                 var elbJson = JsonConvert.SerializeObject(elb);
-                RedisManager.AddWithExpiry(string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName), elbJson, db);
+                //RedisManager.AddWithExpiry(string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName), elbJson, db);
+                var newDataKey = Common.GetDataKey(captureTime, accountId, regionEndPoint.SystemName);
+                var entityKey = string.Format("{0}-{1}-{2}", newDataKey, "lb", elb.LoadBalancerName);
+                Common.UpdateTopology(captureTime, accountId, regionEndPoint.SystemName, "lb", elb.LoadBalancerName, elbJson, "UPDATE");
                 //code to add elb name to the instance details
+                var latestDataKey = Common.GetDataKey("latest", accountId, regionEndPoint.SystemName);
+                var latestEntitySetKey = string.Format("{0}-{1}set", latestDataKey, "ins");
                 foreach (var instance in elb.Instances)
                 {
                     //load instance data from redis
-                    var instanceJson = db.StringGet(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId));
+                    var latestInstanceKey = RedisManager.GetSetMember(latestEntitySetKey, instance.InstanceId, db);
+                    var instanceJson = db.StringGet(latestInstanceKey.ToString());
                     if (instanceJson.HasValue)
                     {
                         var dataInstance = JsonConvert.DeserializeObject<Data.Instance>(instanceJson);
                         //add elb name to instance
-                        dataInstance.ElbKeyName = string.Format("{0}-lb-{1}", dataKey, elb.LoadBalancerName);
+                        dataInstance.ElbKeyName = entityKey;
                         //add the instance data with asg name back to redis
                         instanceJson = JsonConvert.SerializeObject(dataInstance);
-                        RedisManager.AddWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
+                        RedisManager.AddWithExpiry(latestInstanceKey, instanceJson, db);
                     }
                 }
             }
         }
 
-        internal static void WriteAsgs(RegionEndpoint regionEndPoint, string dataKey, IDatabase db)
+        internal static void WriteAsgs(DateTime captureTime, string accountId, RegionEndpoint regionEndPoint)
         {
             var asc = new AmazonAutoScalingClient(regionEndPoint);
             DescribeAutoScalingGroupsResponse asgResponse = asc.DescribeAutoScalingGroups();
             DescribeAutoScalingInstancesResponse asgInstanceResponse = asc.DescribeAutoScalingInstances();
+            var db = RedisManager.GetRedisDatabase();
             foreach (var asGroup in asgResponse.AutoScalingGroups)
             {
-                RedisManager.AddSetWithExpiry(string.Format("{0}-asgs", dataKey), string.Format("asg-{0}", asGroup.AutoScalingGroupName), db);
+                //to do: may not be required.
+                //RedisManager.AddSetWithExpiry(string.Format("{0}-asgs", dataKey), string.Format("asg-{0}", asGroup.AutoScalingGroupName), db);
                 var asgJson = JsonConvert.SerializeObject(asGroup);
-                RedisManager.AddWithExpiry(string.Format("{0}-asg-{1}", dataKey, asGroup.AutoScalingGroupName), asgJson, db);
+                //RedisManager.AddWithExpiry(string.Format("{0}-asg-{1}", dataKey, asGroup.AutoScalingGroupName), asgJson, db);
+                var newDataKey = Common.GetDataKey(captureTime, accountId, regionEndPoint.SystemName);
+                var entityKey = string.Format("{0}-{1}-{2}", newDataKey, "asg", asGroup.AutoScalingGroupName);
+                Common.UpdateTopology(captureTime, accountId, regionEndPoint.SystemName, "asg", asGroup.AutoScalingGroupName, asgJson, "UPDATE");
                 //code to add asg name to the instance details
+                var latestDataKey = Common.GetDataKey("latest", accountId, regionEndPoint.SystemName);
+                var latestEntitySetKey = string.Format("{0}-{1}set", latestDataKey, "ins");
                 foreach (var instance in asGroup.Instances)
                 {
                     //load instance data from redis
-                    var instanceJson = db.StringGet(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId));
+                    var latestInstanceKey = RedisManager.GetSetMember(latestEntitySetKey, instance.InstanceId, db);
+                    var instanceJson = db.StringGet(latestInstanceKey.ToString());
                     if (instanceJson.HasValue)
                     {
                         var dataInstance = JsonConvert.DeserializeObject<Data.Instance>(instanceJson);
-                        //add asg name to instance
-                        dataInstance.AsgKeyName = string.Format("{0}-asg-{1}", dataKey, asGroup.AutoScalingGroupName);
+                        //add elb name to instance
+                        dataInstance.AsgKeyName = entityKey;
                         //add the instance data with asg name back to redis
                         instanceJson = JsonConvert.SerializeObject(dataInstance);
-                        RedisManager.AddWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
+                        RedisManager.AddWithExpiry(latestInstanceKey, instanceJson, db);
                     }
                 }
             }
         }
 
-        internal static void WriteInstances(IAmazonEC2 ec2, string dataKey, IDatabase db)
+        internal static void WriteInstances(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             DescribeInstancesResponse instanceResponse = ec2.DescribeInstances();
-            var dKey = string.Empty;
+            var dataKey = Common.GetDataKey(captureTime, accountId, region);
+            var db = RedisManager.GetRedisDatabase();
+            var newDataKey = Common.GetDataKey(captureTime, accountId, region);
             foreach (var reservation in instanceResponse.Reservations)
             {
                 foreach (var rInstance in reservation.Instances)
@@ -104,10 +123,13 @@ namespace TopologyReader.Helpers
                     var instance = AutoMapper.Mapper.Map<Data.Instance>(rInstance);
                     instance.Size = new Random().Next(1, 32);
                     string instanceJson = JsonConvert.SerializeObject(instance);
-                    RedisManager.AddWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
-                    RedisManager.AddSetWithExpiry(string.Format("{0}-vpcinstances-{1}", dataKey, instance.VpcId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
-                    RedisManager.AddSetWithExpiry(string.Format("{0}-subnetinstances-{1}", dataKey, instance.SubnetId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
-                    dKey = string.Format("{0}-{1}", dataKey, instance.SubnetId);
+                    //RedisManager.AddWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
+                    Common.UpdateTopology(captureTime, accountId, region, "ins", instance.InstanceId, instanceJson, "UPDATE");
+                    var entityKey = string.Format("{0}-{1}-{2}", newDataKey, "ins", instance.InstanceId);
+                    Common.UpdateTopologySet(captureTime, accountId, region, "vpcinstances", instance.VpcId, entityKey, "UPDATE");
+                    Common.UpdateTopologySet(captureTime, accountId, region, "subnetinstances", instance.SubnetId, entityKey, "UPDATE");
+                    //RedisManager.AddSetWithExpiry(string.Format("{0}-vpcinstances-{1}", dataKey, instance.VpcId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
+                    //RedisManager.AddSetWithExpiry(string.Format("{0}-subnetinstances-{1}", dataKey, instance.SubnetId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
                 }
             }
         }

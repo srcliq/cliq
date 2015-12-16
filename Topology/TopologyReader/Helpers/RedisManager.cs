@@ -68,6 +68,19 @@ namespace TopologyReader.Helpers
             return false;
         }
 
+        internal static RedisValue? GetSetMember(string key, string value, IDatabase db)
+        {
+            var members = db.SetMembers(key);
+            foreach (var member in members)
+            {
+                if (member.ToString().Contains(value))
+                {
+                    return member;
+                }
+            }
+            return null;
+        }
+
         internal static void CopySetAndStore(RedisKey destinationSetKey, RedisKey sourceSetKey, IDatabase db)
         {
             db.SetCombineAndStore(SetOperation.Union, destinationSetKey, new RedisKey[] { sourceSetKey });

@@ -202,9 +202,9 @@ namespace TopologyReader
             TopologyWriter.WriteSnapshots(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteRds(currentDateTime, accountNumber, regionEndPoint);
             TopologyWriter.WriteContainers(currentDateTime, accountNumber, regionEndPoint);
-            TopologyWriter.WriteInstances(ec2, dataKey, db);
-            TopologyWriter.WriteAsgs(regionEndPoint, dataKey, db);
-            TopologyWriter.WriteElbs(regionEndPoint, dataKey, db);
+            TopologyWriter.WriteInstances(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteAsgs(currentDateTime, accountNumber, regionEndPoint);
+            TopologyWriter.WriteElbs(currentDateTime, accountNumber, regionEndPoint);
             TopologyWriter.WriteSecurityGroups(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
 
             Log.InfoFormat("End writing data to redis ({0})", regionEndPoint.SystemName);
