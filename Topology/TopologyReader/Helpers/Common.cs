@@ -14,19 +14,25 @@ namespace TopologyReader.Helpers
 {
     public static class Common
     {
-        
-
         public static string GetAccountNumber()
         {
-            var iamClient = new AmazonIdentityManagementServiceClient();
-            var x = iamClient.GetUser();
-            Regex regex = new Regex(@"\d+");
-            Match match = regex.Match(x.User.Arn);
-            if (match.Success)
+            try
             {
-                return match.Value;
+                var iamClient = new AmazonIdentityManagementServiceClient();
+                var user = iamClient.GetUser();
+                Regex regex = new Regex(@"\d+");
+                Match match = regex.Match(user.User.Arn);
+                if (match.Success)
+                {
+                    return match.Value;
+                }
+                return string.Empty; //"arn:aws:iam::990008671661:user/xyz"
             }
-            return string.Empty; //"arn:aws:iam::990008671661:user/xyz"
+            catch (Exception ex)
+            {
+                var accountNumber = ex.Message.Substring(ex.Message.IndexOf("::", System.StringComparison.Ordinal) + 2, 12);
+                return accountNumber;
+            }            
         }
 
         public static string GetDataKey(string accountNumber, RegionEndpoint regionEndPoint)
@@ -124,7 +130,7 @@ namespace TopologyReader.Helpers
                             RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
                             break;
                         case "UPDATE":
-                            RedisManager.RemoveSetMember(latestEntitySetKey, entityKey, db);
+                            RedisManager.RemoveSetMember(latestEntitySetKey, entityId, db);
                             RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
                             break;
                         case "DELETE":
@@ -165,7 +171,7 @@ namespace TopologyReader.Helpers
                             RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
                             break;
                         case "UPDATE":
-                            RedisManager.RemoveSetMember(latestEntitySetKey, entityKey, db);
+                            RedisManager.RemoveSetMember(latestEntitySetKey, entityId, db);
                             RedisManager.AddSetWithExpiry(latestEntitySetKey, entityKey, db);
                             break;
                         case "DELETE":

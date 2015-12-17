@@ -109,12 +109,12 @@ namespace TopologyReader.Helpers
                 }
             }
         }
-
+        
         internal static void WriteInstances(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             DescribeInstancesResponse instanceResponse = ec2.DescribeInstances();
-            var dataKey = Common.GetDataKey(captureTime, accountId, region);
-            var db = RedisManager.GetRedisDatabase();
+            Common.GetDataKey(captureTime, accountId, region);
+            RedisManager.GetRedisDatabase();
             var newDataKey = Common.GetDataKey(captureTime, accountId, region);
             foreach (var reservation in instanceResponse.Reservations)
             {
@@ -255,6 +255,7 @@ namespace TopologyReader.Helpers
         internal static DescribeSubnetsResponse WriteSubnets(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var subnetResponse = ec2.DescribeSubnets();
+            var newDataKey = Common.GetDataKey(captureTime, accountId, region);
             foreach (var subnet in subnetResponse.Subnets)
             {
                 var topologySubnet = AutoMapper.Mapper.Map<Data.Subnet>(subnet);
@@ -264,8 +265,10 @@ namespace TopologyReader.Helpers
                     topologySubnet.Name = subnet.SubnetId;
                 string subnetJson = JsonConvert.SerializeObject(topologySubnet);
                 //to do:
-                //RedisManager.AddSetWithExpiry(string.Format("{0}-vpcsubnets-{1}", dataKey, subnet.VpcId), string.Format("{0}-subnet-{1}", dataKey, subnet.SubnetId), db);
+                //RedisManager.AddSetWithExpiry(string.Format("{0}-vpcsubnets-{1}", dataKey, subnet.VpcId), string.Format("{0}-subnet-{1}", dataKey, subnet.SubnetId), db);                
+                var entityKey = string.Format("{0}-{1}-{2}", newDataKey, "subnet", subnet.SubnetId);
                 Common.UpdateTopology(captureTime, accountId, region, "subnet", subnet.SubnetId, subnetJson, "UPDATE");
+                Common.UpdateTopologySet(captureTime, accountId, region, "vpcsubnets", subnet.VpcId, entityKey, "UPDATE");                
             }
             return subnetResponse;
         }
