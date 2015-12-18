@@ -189,23 +189,23 @@ namespace TopologyReader
             //WriteElbs(regionEndPoint, dataKey, db);
             //WriteSecurityGroups(ec2, dataKey, db);
 
-            //TopologyWriter.WriteVpcs(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteVpcPeeringConnections(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteVpcEndPoints(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpcs(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpcPeeringConnections(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpcEndPoints(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteSubnets(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteRouteTables(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteInternetGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteVpnGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteVpnConnections(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteEnis(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteEbs(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteSnapshots(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteRds(currentDateTime, accountNumber, regionEndPoint);
-            //TopologyWriter.WriteContainers(currentDateTime, accountNumber, regionEndPoint);
-            //TopologyWriter.WriteInstances(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
-            //TopologyWriter.WriteAsgs(currentDateTime, accountNumber, regionEndPoint);
-            //TopologyWriter.WriteElbs(currentDateTime, accountNumber, regionEndPoint);
-            //TopologyWriter.WriteSecurityGroups(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteRouteTables(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteInternetGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpnGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteVpnConnections(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteEnis(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteEbs(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteSnapshots(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteRds(currentDateTime, accountNumber, regionEndPoint);
+            TopologyWriter.WriteContainers(currentDateTime, accountNumber, regionEndPoint);
+            TopologyWriter.WriteInstances(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteAsgs(currentDateTime, accountNumber, regionEndPoint);
+            TopologyWriter.WriteElbs(currentDateTime, accountNumber, regionEndPoint);
+            TopologyWriter.WriteSecurityGroups(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
 
             Log.InfoFormat("End writing data to redis ({0})", regionEndPoint.SystemName);
         }        

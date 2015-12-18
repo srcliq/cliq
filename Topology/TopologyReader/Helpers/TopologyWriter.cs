@@ -114,7 +114,6 @@ namespace TopologyReader.Helpers
         {
             DescribeInstancesResponse instanceResponse = ec2.DescribeInstances();
             Common.GetDataKey(captureTime, accountId, region);
-            RedisManager.GetRedisDatabase();
             var newDataKey = Common.GetDataKey(captureTime, accountId, region);
             foreach (var reservation in instanceResponse.Reservations)
             {
