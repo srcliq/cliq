@@ -72,11 +72,15 @@ namespace TopologyReader
                     if (writeTopology == 1)
                     {
                         WriteTopology(accountNumber, endPoint, db);
-                    }
+                    }                    
                     if (readFlowLogs == 1)
                     {
                         ReadFlowLogs(accountNumber, endPoint, flowLogDurationType, db);
                     }
+                }
+                if (writeTopology == 2)
+                {
+                    AWSConfigReader.ProcessConfigMessages();
                 }
             }
             catch (Exception ex)
