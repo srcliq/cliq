@@ -20,6 +20,13 @@ namespace TopologyReader
         {
             Log.Info("Start processing queue messages");
             var configQueueUrl = sqsClient.GetQueueUrl("config-queue").QueueUrl;
+            var timestamp = DateTime.UtcNow;
+            ProcessConfigMessagesBatch(configQueueUrl, timestamp);
+            Log.Info("End processing queue messages");
+        }
+
+        private static void ProcessConfigMessagesBatch(string configQueueUrl, DateTime timestamp)
+        {
             var result = sqsClient.ReceiveMessage(new ReceiveMessageRequest
             {
                 QueueUrl = configQueueUrl,
@@ -49,7 +56,9 @@ namespace TopologyReader
                                 var entityId = string.Empty;
                                 var entityJson = string.Empty;
                                 var configuration = JsonConvert.DeserializeObject<ConfigurationItem>(ci.ToString());
-                                if(configuration.configuration != null)
+                                var db = RedisManager.GetRedisDatabase();
+                                var dataKey = Common.GetDataKey(timestamp, configuration.AWSAccountId, configuration.AWSRegion);
+                                if (configuration.configuration != null)
                                 {
                                     switch (configuration.ResourceType)
                                     {
@@ -154,9 +163,10 @@ namespace TopologyReader
                                         default:
                                             break;
                                     }
-                                }                                
+                                }
                                 if (!string.IsNullOrEmpty(entityId))
                                 {
+                                    RedisManager.AddWithExpiry(string.Format("{0}-configchange-{1}-{2}", dataKey, entityIdentifier, entityId), m.ToString(), db);
                                     Common.UpdateTopology(configuration, entityIdentifier, entityId, entityJson, configurationItemDiff.ChangeType);
                                 }
                             }
@@ -178,12 +188,10 @@ namespace TopologyReader
                     catch (Exception ex)
                     {
                         Log.Error("Error occurred while processing config message", ex);
-                    }                    
+                    }
                 }
+                ProcessConfigMessagesBatch(configQueueUrl, timestamp);
             }
-            Log.Info("End processing queue messages");
-        }
-
-        
+        }        
     }
 }
