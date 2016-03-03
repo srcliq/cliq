@@ -1,4 +1,5 @@
-﻿using Amazon;
+﻿using System.Configuration;
+using Amazon;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using log4net;
@@ -19,7 +20,12 @@ namespace TopologyReader
         public static void ProcessConfigMessages()
         {
             Log.Info("Start processing queue messages");
-            var configQueueUrl = sqsClient.GetQueueUrl("config-queue").QueueUrl;
+            var configQueueName = "config-queue";
+            if (!string.IsNullOrEmpty(ConfigurationManager.AppSettings["ConfigQueueName"]))
+            {
+                configQueueName = ConfigurationManager.AppSettings["ConfigQueueName"];
+            }
+            var configQueueUrl = sqsClient.GetQueueUrl(configQueueName).QueueUrl;
             var result = sqsClient.ReceiveMessage(new ReceiveMessageRequest
             {
                 QueueUrl = configQueueUrl,

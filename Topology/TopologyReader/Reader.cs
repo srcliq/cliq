@@ -197,6 +197,7 @@ namespace TopologyReader
             TopologyWriter.WriteVpcPeeringConnections(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteVpcEndPoints(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteSubnets(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteInstances(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteRouteTables(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteInternetGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteVpnGateways(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
@@ -205,8 +206,7 @@ namespace TopologyReader
             TopologyWriter.WriteEbs(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteSnapshots(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
             TopologyWriter.WriteRds(currentDateTime, accountNumber, regionEndPoint);
-            TopologyWriter.WriteContainers(currentDateTime, accountNumber, regionEndPoint);
-            TopologyWriter.WriteInstances(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);
+            TopologyWriter.WriteContainers(currentDateTime, accountNumber, regionEndPoint);            
             TopologyWriter.WriteAsgs(currentDateTime, accountNumber, regionEndPoint);
             TopologyWriter.WriteElbs(currentDateTime, accountNumber, regionEndPoint);
             TopologyWriter.WriteSecurityGroups(ec2, currentDateTime, accountNumber, regionEndPoint.SystemName);

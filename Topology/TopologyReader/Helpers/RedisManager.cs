@@ -60,7 +60,7 @@ namespace TopologyReader.Helpers
             var members = db.SetMembers(key);
             foreach (var member in members)
             {
-                if (member.ToString().Contains(value))
+                if (value != null && member.ToString().Contains(value))
                 {
                     return db.SetRemove(key, member);
                 }
