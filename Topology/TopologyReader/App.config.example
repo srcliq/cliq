@@ -16,6 +16,7 @@
     <add key="ESIndexType" value="CloudTrail/Flowlogs"/>
     <add key="FlowLogDurationMin" value="15"/>
     <add key="FlowLogDurationMinMultiple" value="60,240,480,1440"/>
+    <add key="ConfigQueueName" value="45323-TTS-SMG-config-queue"/>
   </appSettings>
   <log4net>
     <appender name="RollingLogFileAppender" type="log4net.Appender.RollingFileAppender">
