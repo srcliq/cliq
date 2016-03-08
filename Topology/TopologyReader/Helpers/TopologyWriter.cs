@@ -21,6 +21,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using log4net;
+using DescribeTagsRequest = Amazon.EC2.Model.DescribeTagsRequest;
 
 namespace TopologyReader.Helpers
 {
@@ -120,6 +121,8 @@ namespace TopologyReader.Helpers
                 foreach (var rInstance in reservation.Instances)
                 {
                     var instance = AutoMapper.Mapper.Map<Data.Instance>(rInstance);
+                    var nameTag = instance.Tags.Find(t => t.Key == "Name");
+                    instance.Name = nameTag != null ? nameTag.Value : instance.InstanceId;
                     instance.Size = new Random().Next(1, 32);
                     string instanceJson = JsonConvert.SerializeObject(instance);
                     //RedisManager.AddWithExpiry(string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), instanceJson, db);
@@ -127,6 +130,10 @@ namespace TopologyReader.Helpers
                     var entityKey = string.Format("{0}-{1}-{2}", newDataKey, "ins", instance.InstanceId);
                     Common.UpdateTopologySet(captureTime, accountId, region, "vpcinstances", instance.VpcId, entityKey, "UPDATE");
                     Common.UpdateTopologySet(captureTime, accountId, region, "subnetinstances", instance.SubnetId, entityKey, "UPDATE");
+                    foreach (var sg in instance.SecurityGroups)
+                    {
+                        Common.UpdateTopologySet(captureTime, accountId, region, "sginstances", sg.GroupId, entityKey, "UPDATE");
+                    }
                     //RedisManager.AddSetWithExpiry(string.Format("{0}-vpcinstances-{1}", dataKey, instance.VpcId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
                     //RedisManager.AddSetWithExpiry(string.Format("{0}-subnetinstances-{1}", dataKey, instance.SubnetId), string.Format("{0}-ins-{1}", dataKey, instance.InstanceId), db);
                 }
@@ -164,6 +171,16 @@ namespace TopologyReader.Helpers
             {
                 string dbJson = JsonConvert.SerializeObject(dbInstance);                
                 Common.UpdateTopology(captureTime, accountId, regionEndPoint.SystemName, "rds", dbInstance.DBInstanceIdentifier, dbJson, "UPDATE");
+            }
+        }
+
+        internal static void WriteTags(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
+        {
+            var tagsResponse = ec2.DescribeTags();
+            foreach (var tag in tagsResponse.Tags)
+            {
+                string tagJson = JsonConvert.SerializeObject(tag);
+                Common.UpdateTopology(captureTime, accountId, region, "tag", string.Concat(tag.ResourceId, "-", tag.Key), tagJson, "UPDATE");
             }
         }
 
