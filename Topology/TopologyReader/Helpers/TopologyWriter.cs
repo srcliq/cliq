@@ -177,11 +177,51 @@ namespace TopologyReader.Helpers
         internal static void WriteTags(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
         {
             var tagsResponse = ec2.DescribeTags();
+            var newDataKey = Common.GetDataKey(captureTime, accountId, region);            
             foreach (var tag in tagsResponse.Tags)
             {
-                string tagJson = JsonConvert.SerializeObject(tag);
-                Common.UpdateTopology(captureTime, accountId, region, "tag", string.Concat(tag.ResourceId, "-", tag.Key), tagJson, "UPDATE");
+                string resourceShortName = GetResourceShortName(tag.ResourceType.Value);
+                var entityKey = string.Format("{0}-{1}-{2}", newDataKey, resourceShortName, tag.ResourceId);                
+                Common.UpdateTopologySet(captureTime, accountId, region, "tag", tag.Key, entityKey, "UPDATE");
             }
+        }
+
+        private static string GetResourceShortName(string resourceType)
+        {
+            string shortName = resourceType;
+            switch (resourceType)
+            {
+                case "customer-gateway":
+                    shortName = "cg";
+                    break;
+                case "instance":
+                    shortName = "ins";
+                    break;
+                case "internet-gateway":
+                    shortName = "ig";
+                    break;
+                case "network-interface":
+                    shortName = "eni";
+                    break;
+                case "route-table":
+                    shortName = "rt";
+                    break;
+                case "security-group":
+                    shortName = "sg";
+                    break;
+                case "snapshot":
+                    shortName = "ss";
+                    break;
+                case "vpc-connection":
+                    shortName = "vc";
+                    break;
+                case "vpn-gateway":
+                    shortName = "vg";
+                    break;                
+            }
+            return shortName;
+            //customer-gateway | dhcp-options | image | instance | internet-gateway | network-acl | network-interface | reserved-instances | route-table | 
+            //security-group | snapshot | spot-instances-request | subnet | volume | vpc | vpn-connection | vpn-gateway 
         }
 
         internal static void WriteSnapshots(IAmazonEC2 ec2, DateTime captureTime, string accountId, string region)
